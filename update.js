@@ -15,6 +15,19 @@ module.exports = {
       }
     },
     {
+      method: "script.start",
+      params: {
+        uri: "torch.js",
+        params: {
+          venv: "env",
+          path: ".",
+          xformers: false,
+          flashattention: false,
+          triton: false
+        }
+      }
+    },
+    {
       method: "notify",
       params: {
         html: "Update complete! Launcher pulled and Python dependencies refreshed."
