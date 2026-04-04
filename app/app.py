@@ -441,6 +441,72 @@ def load_translate_model(model_size: str = "12B", use_pipeline: bool = True) -> 
         return f"Error loading TranslateGemma: {err}"
 
 
+def _split_into_chunks(text: str, max_words: int = 300) -> list[str]:
+    """Split text into sentence-aware chunks of at most *max_words* words."""
+    import re
+
+    sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+    chunks: list[str] = []
+    current: list[str] = []
+    current_words = 0
+
+    for sentence in sentences:
+        words = len(sentence.split())
+        if current_words + words > max_words and current:
+            chunks.append(" ".join(current))
+            current = [sentence]
+            current_words = words
+        else:
+            current.append(sentence)
+            current_words += words
+
+    if current:
+        chunks.append(" ".join(current))
+
+    return chunks
+
+
+def _translate_single_chunk(
+    text: str,
+    source_code: str,
+    target_code: str,
+    gen_config,
+) -> str:
+    global pipe, model, processor
+
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "source_lang_code": source_code,
+                    "target_lang_code": target_code,
+                    "text": text,
+                }
+            ],
+        }
+    ]
+    if pipe is not None:
+        output = pipe(text=messages, generation_config=gen_config)
+        return output[0]["generated_text"][-1]["content"]
+    inputs = (
+        processor.apply_chat_template(
+            messages,
+            tokenize=True,
+            add_generation_prompt=True,
+            return_dict=True,
+            return_tensors="pt",
+        )
+        .to(model.device, dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32)
+    )
+    input_len = len(inputs["input_ids"][0])
+    with torch.inference_mode():
+        generation = model.generate(**inputs, generation_config=gen_config, do_sample=False)
+        generation = generation[0][input_len:]
+    return processor.decode(generation, skip_special_tokens=True)
+
+
 def translate_text_block(
     text: str,
     source_lang: str,
@@ -456,41 +522,18 @@ def translate_text_block(
 
     source_code = LANGUAGES.get(source_lang, "en")
     target_code = LANGUAGES.get(target_lang, "es")
-    messages = [
-        {
-            "role": "user",
-            "content": [
-                {
-                    "type": "text",
-                    "source_lang_code": source_code,
-                    "target_lang_code": target_code,
-                    "text": text,
-                }
-            ],
-        }
-    ]
     gen_config = GenerationConfig(max_new_tokens=max_tokens, pad_token_id=1)
+
+    chunks = _split_into_chunks(text, max_words=300)
+    translated_parts: list[str] = []
     try:
-        if pipe is not None:
-            output = pipe(text=messages, generation_config=gen_config)
-            return output[0]["generated_text"][-1]["content"]
-        inputs = (
-            processor.apply_chat_template(
-                messages,
-                tokenize=True,
-                add_generation_prompt=True,
-                return_dict=True,
-                return_tensors="pt",
-            )
-            .to(model.device, dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32)
-        )
-        input_len = len(inputs["input_ids"][0])
-        with torch.inference_mode():
-            generation = model.generate(**inputs, generation_config=gen_config, do_sample=False)
-            generation = generation[0][input_len:]
-        return processor.decode(generation, skip_special_tokens=True)
+        for chunk in chunks:
+            part = _translate_single_chunk(chunk, source_code, target_code, gen_config)
+            translated_parts.append(part)
+        return " ".join(translated_parts)
     except Exception as e:
-        return f"Translation error: {e}"
+        partial = " ".join(translated_parts)
+        return f"{partial}\n\nTranslation error: {e}" if partial else f"Translation error: {e}"
 
 
 def _audio_preview_path(path: Optional[str]) -> Optional[str]:
@@ -799,7 +842,7 @@ def build_ui() -> gr.Blocks:
                         label="TranslateGemma size",
                     )
                     max_tok = gr.Slider(
-                        50, 1024, value=400, step=10, label="Max translation tokens"
+                        50, 2048, value=512, step=10, label="Max translation tokens (per chunk)"
                     )
 
                 run_btn = gr.Button(
@@ -998,7 +1041,7 @@ def build_ui() -> gr.Blocks:
                         label="Model size",
                     )
                     manual_max = gr.Slider(
-                        50, 1024, value=400, step=10, label="Max tokens"
+                        50, 2048, value=512, step=10, label="Max tokens (per chunk)"
                     )
                 tr_only_btn = gr.Button("Translate", variant="primary")
                 manual_out = gr.Textbox(
