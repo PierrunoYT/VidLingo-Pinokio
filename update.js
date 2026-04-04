@@ -28,6 +28,14 @@ module.exports = {
       }
     },
     {
+      method: "shell.run",
+      params: {
+        venv: "env",
+        path: ".",
+        message: "uv pip install omnivoice --no-deps"
+      }
+    },
+    {
       method: "notify",
       params: {
         html: "Update complete! Launcher pulled and Python dependencies refreshed."

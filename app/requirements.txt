@@ -1,7 +1,7 @@
 # PyTorch installed via torch.js (Pinokio)
 
-# Transformers (OmniVoice currently pins 5.3.0)
-transformers==5.3.0
+# Transformers >=5.4 for Cohere Transcribe (CohereAsrForConditionalGeneration)
+transformers>=5.4.0,<6.0.0
 accelerate>=1.0.0
 safetensors>=0.6.0
 sentencepiece
@@ -29,6 +29,7 @@ hf-transfer>=0.1.4
 tqdm>=4.65.0
 huggingface_hub>=0.25.0
 
-# OmniVoice TTS
-omnivoice
+# OmniVoice: installed via install/update after torch (uv pip install omnivoice --no-deps) to avoid its transformers==5.3.0 pin
+tensorboardx
+webdataset
 pydub

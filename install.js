@@ -30,6 +30,14 @@ module.exports = {
       }
     },
     {
+      method: "shell.run",
+      params: {
+        venv: "env",
+        path: ".",
+        message: "uv pip install omnivoice --no-deps"
+      }
+    },
+    {
       method: "notify",
       params: {
         html: "Installed. Accept HF licenses for Cohere Transcribe and TranslateGemma; models download on first use."
