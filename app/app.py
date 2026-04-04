@@ -5,6 +5,7 @@ Combines workflows from Youtube2DL-Pinokio, cohere-transcribe-pinokio, Translate
 from __future__ import annotations
 
 import gc
+import logging
 import os
 import shutil
 import time
@@ -140,6 +141,8 @@ hf_token_set = False
 
 YOUTUBE_HOSTS = ("youtube.com", "youtu.be")
 
+_log = logging.getLogger(__name__)
+
 
 def _ensure_dir(path: str) -> None:
     os.makedirs(path, exist_ok=True)
@@ -170,20 +173,38 @@ def _yt_dlp_download(
     status = {"current": "", "percent": 0}
 
     def _hook(d):
-        if d.get("status") == "downloading":
+        st = d.get("status")
+        if st == "downloading":
             total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
             downloaded = d.get("downloaded_bytes") or 0
             if total:
                 status["percent"] = int(downloaded * 100 / total)
-            status["current"] = d.get("filename", "")
+            status["current"] = d.get("filename") or d.get("tmpfilename") or ""
+            pct = status["percent"]
+            name = os.path.basename(status["current"]) if status["current"] else "?"
+            line = f"[yt-dlp] downloading {pct}% — {name}"
+            _log.info(line)
+            print(line, flush=True)
             progress(
-                min(status["percent"] / 100, 0.95),
-                desc=f"Downloading {os.path.basename(status['current'])}",
+                min(pct / 100, 0.95),
+                desc=f"Downloading {name}",
             )
+        elif st == "finished":
+            fn = d.get("filename", "")
+            line = f"[yt-dlp] finished: {fn}"
+            _log.info(line)
+            print(line, flush=True)
+        elif st == "postprocessing":
+            info = d.get("postprocessor") or "ffmpeg"
+            line = f"[yt-dlp] post-processing ({info}) — converting to MP3…"
+            _log.info(line)
+            print(line, flush=True)
+            progress(0.92, desc="Converting to MP3 (ffmpeg)…")
 
     ydl_opts = {
         "format": "bestaudio/best",
         "outtmpl": os.path.join(output_dir, "%(title)s.%(ext)s"),
+        # Keep yt-dlp quiet here; we log via progress_hooks so Pinokio / terminal still shows activity.
         "quiet": True,
         "no_warnings": True,
         "ffmpeg_location": FFMPEG_EXE,
@@ -199,10 +220,15 @@ def _yt_dlp_download(
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         for idx, target in enumerate(targets, start=1):
+            line = f"[yt-dlp] starting {idx}/{len(targets)}: {target}"
+            _log.info(line)
+            print(line, flush=True)
             progress(0.05, desc=f"Preparing {idx}/{len(targets)}")
             ydl.download([target])
 
     progress(0.98, desc="Finalizing")
+    _log.info("[yt-dlp] download pass complete, collecting files…")
+    print("[yt-dlp] download pass complete, collecting files…", flush=True)
     return _collect_output_files(output_dir)
 
 
@@ -214,6 +240,8 @@ def download_youtube_mp3(link: str, progress=gr.Progress()) -> Tuple[Optional[st
         shutil.rmtree(OUTPUT_DIR)
     os.makedirs(OUTPUT_DIR)
     progress(0.01, desc="Validating link")
+    _log.info("[yt-dlp] fetching audio for: %s", link)
+    print(f"[yt-dlp] fetching audio for: {link}", flush=True)
     try:
         if any(host in link for host in YOUTUBE_HOSTS):
             files = _yt_dlp_download([link], OUTPUT_DIR, progress)
@@ -567,6 +595,8 @@ _THEME = gr.themes.Soft(primary_hue="cyan", secondary_hue="slate", neutral_hue="
 
 
 def build_ui() -> gr.Blocks:
+    if not logging.getLogger().handlers:
+        logging.basicConfig(level=logging.INFO, format="%(message)s")
     with gr.Blocks(title="VidLingo") as demo:
         gr.Markdown(
             """
