@@ -21,7 +21,6 @@ from transformers import (
     AutoModelForImageTextToText,
     AutoProcessor,
     CohereAsrForConditionalGeneration,
-    GenerationConfig,
     pipeline,
 )
 from transformers.audio_utils import load_audio
@@ -470,7 +469,7 @@ def _translate_single_chunk(
     text: str,
     source_code: str,
     target_code: str,
-    gen_config,
+    max_tokens: int,
 ) -> str:
     global pipe, model, processor
 
@@ -488,7 +487,8 @@ def _translate_single_chunk(
         }
     ]
     if pipe is not None:
-        output = pipe(text=messages, generation_config=gen_config)
+        # Pass generation kwargs directly — pipeline does not accept generation_config
+        output = pipe(text=messages, max_new_tokens=max_tokens, do_sample=False)
         return output[0]["generated_text"][-1]["content"]
     inputs = (
         processor.apply_chat_template(
@@ -502,7 +502,12 @@ def _translate_single_chunk(
     )
     input_len = len(inputs["input_ids"][0])
     with torch.inference_mode():
-        generation = model.generate(**inputs, generation_config=gen_config, do_sample=False)
+        generation = model.generate(
+            **inputs,
+            max_new_tokens=max_tokens,
+            do_sample=False,
+            pad_token_id=model.config.eos_token_id,
+        )
         generation = generation[0][input_len:]
     return processor.decode(generation, skip_special_tokens=True)
 
@@ -522,13 +527,13 @@ def translate_text_block(
 
     source_code = LANGUAGES.get(source_lang, "en")
     target_code = LANGUAGES.get(target_lang, "es")
-    gen_config = GenerationConfig(max_new_tokens=max_tokens, pad_token_id=1)
+    mt = max(64, int(max_tokens))
 
     chunks = _split_into_chunks(text, max_words=300)
     translated_parts: list[str] = []
     try:
         for chunk in chunks:
-            part = _translate_single_chunk(chunk, source_code, target_code, gen_config)
+            part = _translate_single_chunk(chunk, source_code, target_code, mt)
             translated_parts.append(part)
         return " ".join(translated_parts)
     except Exception as e:
