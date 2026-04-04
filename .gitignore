@@ -3,6 +3,7 @@ env/
 Youtube2DL-Pinokio/
 cohere-transcribe-pinokio/
 TranslateGemma-Pinokio/
+OmniVoice-Pinokio/
 
 app/downloads/
 app/__pycache__/

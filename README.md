@@ -7,6 +7,7 @@ Repository: [https://github.com/PierrunoYT/VidLingo-Pinokio](https://github.com/
 1. **YouTube → MP3** — `yt-dlp` + FFmpeg (same idea as [Youtube2DL-Pinokio](./Youtube2DL-Pinokio)).
 2. **Transcription** — [Cohere Transcribe](https://huggingface.co/CohereLabs/cohere-transcribe-03-2026) (same stack as [cohere-transcribe-pinokio](./cohere-transcribe-pinokio)).
 3. **Translation** — [TranslateGemma](https://huggingface.co/google/translategemma-12b-it) (same idea as [TranslateGemma-Pinokio](./TranslateGemma-Pinokio)).
+4. **TTS** — [OmniVoice](https://huggingface.co/k2-fsa/OmniVoice) for voice design / cloning from translated text.
 
 Between ASR and translation, the ASR model is unloaded from GPU/RAM so TranslateGemma can load; accept both model licenses on Hugging Face and use a read token where required.
 
@@ -15,7 +16,7 @@ Between ASR and translation, the ASR model is unloaded from GPU/RAM so Translate
 1. Install the app from this folder, then **Start**.
 2. Open the Web UI, paste a **Hugging Face token** if you have not logged in on the machine.
 3. Optionally click **Pre-download ASR model** to cache Cohere weights.
-4. Paste a **YouTube URL**, set **spoken language**, **translation source/target**, and **TranslateGemma size**, then **Run: Download → Transcribe → Translate**.
+4. Paste a **YouTube URL**, set **spoken language**, **translation source/target**, **TranslateGemma size**, and **OmniVoice TTS settings**, then **Run: Download → Transcribe → Translate → TTS**.
 
 The sibling folders `Youtube2DL-Pinokio`, `cohere-transcribe-pinokio`, and `TranslateGemma-Pinokio` remain standalone references; this repo’s `app/` implements the combined workflow.
 

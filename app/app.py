@@ -14,6 +14,7 @@ from typing import List, Optional, Tuple
 
 import gradio as gr
 import imageio_ffmpeg
+import numpy as np
 import torch
 import yt_dlp
 from huggingface_hub import login
@@ -24,6 +25,12 @@ from transformers import (
     pipeline,
 )
 from transformers.audio_utils import load_audio
+
+try:
+    from omnivoice import OmniVoice, OmniVoiceGenerationConfig
+except Exception:
+    OmniVoice = None
+    OmniVoiceGenerationConfig = None
 
 # --- Paths ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -137,6 +144,13 @@ processor = None
 pipe = None
 current_model_size: Optional[str] = None
 hf_token_set = False
+
+# OmniVoice globals
+OMNIVOICE_CHECKPOINT = os.environ.get("OMNIVOICE_MODEL", "k2-fsa/OmniVoice")
+OMNIVOICE_LOAD_ASR_DEFAULT = False
+ov_model = None
+ov_sampling_rate = 24000
+ov_device = None
 
 YOUTUBE_HOSTS = ("youtube.com", "youtu.be")
 
@@ -438,6 +452,132 @@ def load_translate_model(model_size: str = "12B", use_pipeline: bool = True) -> 
                 f"https://huggingface.co/{model_id}"
             )
         return f"Error loading TranslateGemma: {err}"
+
+
+def _resolve_ov_device(explicit: Optional[str] = None) -> str:
+    if explicit:
+        return explicit
+    if torch.cuda.is_available():
+        return "cuda"
+    if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
+
+
+def _resolve_ov_dtype(device: str):
+    return torch.float16 if device == "cuda" else torch.float32
+
+
+def _env_flag(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() not in ("0", "false", "no", "off")
+
+
+def unload_omnivoice_model() -> None:
+    global ov_model, ov_sampling_rate, ov_device
+    if ov_model is not None:
+        del ov_model
+        ov_model = None
+    ov_sampling_rate = 24000
+    ov_device = None
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+
+def get_omnivoice_model(device: str = "auto") -> Tuple[Optional[object], str]:
+    global ov_model, ov_sampling_rate, ov_device
+    if OmniVoice is None:
+        return None, (
+            "OmniVoice is not installed. Re-run Install so app/requirements.txt "
+            "installs `omnivoice`."
+        )
+    target_device = _resolve_ov_device(None if device == "auto" else device)
+    if ov_model is not None and ov_device == target_device:
+        return ov_model, "OmniVoice already loaded."
+
+    unload_omnivoice_model()
+    try:
+        load_asr = _env_flag("OMNIVOICE_LOAD_ASR", OMNIVOICE_LOAD_ASR_DEFAULT)
+        ov_model = OmniVoice.from_pretrained(
+            OMNIVOICE_CHECKPOINT,
+            device_map=target_device,
+            dtype=_resolve_ov_dtype(target_device),
+            load_asr=load_asr,
+        )
+        ov_sampling_rate = getattr(ov_model, "sampling_rate", 24000)
+        ov_device = target_device
+        return ov_model, f"OmniVoice loaded ({target_device}, load_asr={load_asr})."
+    except Exception as exc:
+        unload_omnivoice_model()
+        return None, f"Error loading OmniVoice: {exc}"
+
+
+def generate_omnivoice_tts(
+    text: str,
+    tts_language: str,
+    tts_mode: str,
+    ref_audio,
+    ref_text: str,
+    tts_instruct: str,
+    num_step: int,
+    guidance_scale: float,
+    denoise: bool,
+    speed: float,
+    duration: float,
+    preprocess_prompt: bool,
+    postprocess_output: bool,
+    tts_device: str = "auto",
+) -> Tuple[Optional[Tuple[int, np.ndarray]], str]:
+    if not text or not text.strip():
+        return None, "No text to synthesize."
+
+    model_ov, load_msg = get_omnivoice_model(device=tts_device)
+    if model_ov is None:
+        return None, load_msg
+
+    if OmniVoiceGenerationConfig is None:
+        return None, "OmniVoice generation config is unavailable."
+
+    gen_config = OmniVoiceGenerationConfig(
+        num_step=int(num_step or 32),
+        guidance_scale=float(guidance_scale) if guidance_scale is not None else 2.0,
+        denoise=bool(denoise) if denoise is not None else True,
+        preprocess_prompt=bool(preprocess_prompt),
+        postprocess_output=bool(postprocess_output),
+    )
+    lang = None if not tts_language or tts_language == "Auto" else tts_language
+    kwargs = {
+        "text": text.strip(),
+        "language": lang,
+        "generation_config": gen_config,
+    }
+
+    if speed is not None and float(speed) != 1.0:
+        kwargs["speed"] = float(speed)
+    if duration is not None and float(duration) > 0:
+        kwargs["duration"] = float(duration)
+    if tts_mode == "clone":
+        if not ref_audio:
+            return None, "Clone mode needs a reference audio."
+        kwargs["voice_clone_prompt"] = model_ov.create_voice_clone_prompt(
+            ref_audio=ref_audio,
+            ref_text=(ref_text or "").strip() or None,
+        )
+    elif tts_mode == "design" and (tts_instruct or "").strip():
+        kwargs["instruct"] = tts_instruct.strip()
+
+    try:
+        audio = model_ov.generate(**kwargs)
+        tensor = audio[0].squeeze(0)
+        if hasattr(tensor, "detach"):
+            tensor = tensor.detach().cpu()
+        waveform = (tensor.numpy() * 32767).astype(np.int16)
+        return (ov_sampling_rate, waveform), "TTS done."
+    except Exception as exc:
+        return None, f"TTS error: {type(exc).__name__}: {exc}"
 
 
 def _split_into_chunks(text: str, max_words: int = 300) -> list[str]:
@@ -743,6 +883,128 @@ def run_full_pipeline(
     return preview, mp3_path, dl_msg, transcript, translated, "\n".join(log_lines)
 
 
+def run_full_pipeline_tts(
+    youtube_url: str,
+    hf_token: str,
+    transcribe_language: str,
+    punctuation: bool,
+    use_long_form: bool,
+    asr_max_tokens: int,
+    translate_source: str,
+    translate_target: str,
+    tg_model_size: str,
+    max_tokens: int,
+    tts_language: str,
+    tts_mode: str,
+    ref_audio,
+    ref_text: str,
+    tts_instruct: str,
+    tts_steps: int,
+    tts_guidance: float,
+    tts_denoise: bool,
+    tts_speed: float,
+    tts_duration: float,
+    tts_preprocess: bool,
+    tts_postprocess: bool,
+    tts_device: str,
+    progress=gr.Progress(),
+) -> Tuple[Optional[str], Optional[str], str, str, str, Optional[Tuple[int, np.ndarray]], str, str]:
+    """
+    Returns: audio_preview_path, file_path, download_status, transcription, translation,
+    synthesized_audio, tts_status, log
+    """
+    log_lines: List[str] = []
+
+    def log(msg: str) -> None:
+        log_lines.append(msg)
+
+    token = (hf_token or "").strip() or None
+
+    # 1) YouTube -> MP3
+    progress(0.0, desc="Step 1/5: Downloading audio...")
+    mp3_path, dl_msg = download_youtube_mp3(youtube_url, progress=progress)
+    if mp3_path is None:
+        return None, None, dl_msg, "", "", None, "", "\n".join(log_lines + [dl_msg])
+    log(dl_msg)
+    preview = _audio_preview_path(mp3_path)
+    if not mp3_path.lower().endswith(".mp3"):
+        msg = "Multiple MP3s were zipped. Download the ZIP and retry with a single track for TTS."
+        return None, mp3_path, dl_msg, "", "", None, msg, "\n".join(log_lines + [msg])
+
+    # 2) Transcribe
+    progress(0.2, desc="Step 2/5: Preparing ASR...")
+    unload_translate_model()
+    progress(0.3, desc="Step 3/5: Transcribing...")
+    if use_long_form:
+        transcript, tr_stats = transcribe_long(
+            mp3_path,
+            transcribe_language,
+            punctuation,
+            token,
+            int(asr_max_tokens),
+            progress=progress,
+        )
+    else:
+        transcript, tr_stats = transcribe_short(
+            mp3_path,
+            transcribe_language,
+            punctuation,
+            token,
+            int(asr_max_tokens),
+            progress=progress,
+        )
+    log(tr_stats)
+    if transcript.startswith("Error") or transcript.startswith("Please"):
+        unload_asr_model()
+        return preview, mp3_path, dl_msg, transcript, "", None, "", "\n".join(log_lines)
+
+    # 3) Translate
+    progress(0.55, desc="Releasing ASR model...")
+    unload_asr_model()
+    progress(0.62, desc="Step 4/5: Loading translation model...")
+    if token:
+        set_hf_token(hf_token)
+    load_msg = load_translate_model(tg_model_size, use_pipeline=True)
+    log(load_msg)
+    if "Error" in load_msg or "Authentication" in load_msg:
+        return preview, mp3_path, dl_msg, transcript, "", None, "", "\n".join(log_lines + [load_msg])
+    src = translate_source or COHERE_TO_TRANSLATE_SOURCE.get(transcribe_language, "English")
+    progress(0.78, desc="Translating...")
+    translated = translate_text_block(transcript, src, translate_target, int(max_tokens))
+
+    # 4) TTS
+    progress(0.86, desc="Step 5/5: Preparing OmniVoice...")
+    unload_translate_model()
+    tts_audio, tts_status = generate_omnivoice_tts(
+        text=translated,
+        tts_language=tts_language,
+        tts_mode=tts_mode,
+        ref_audio=ref_audio,
+        ref_text=ref_text,
+        tts_instruct=tts_instruct,
+        num_step=int(tts_steps),
+        guidance_scale=float(tts_guidance),
+        denoise=bool(tts_denoise),
+        speed=float(tts_speed),
+        duration=float(tts_duration),
+        preprocess_prompt=bool(tts_preprocess),
+        postprocess_output=bool(tts_postprocess),
+        tts_device=tts_device,
+    )
+    log(tts_status)
+    log("Done.")
+    return (
+        preview,
+        mp3_path,
+        dl_msg,
+        transcript,
+        translated,
+        tts_audio,
+        tts_status,
+        "\n".join(log_lines),
+    )
+
+
 def translate_only(
     transcript: str,
     hf_token: str,
@@ -777,7 +1039,7 @@ def build_ui() -> gr.Blocks:
         gr.Markdown(
             """
             # VidLingo
-            **YouTube → MP3 → transcribe (Cohere) → translate (TranslateGemma).**
+            **YouTube → MP3 → transcribe (Cohere) → translate (TranslateGemma) → TTS (OmniVoice).**
             """
         )
 
@@ -801,8 +1063,8 @@ def build_ui() -> gr.Blocks:
             # --- Full pipeline ---
             with gr.Tab("Full pipeline"):
                 gr.Markdown(
-                    "Download audio from YouTube, transcribe, then translate. "
-                    "**Results appear below in order: audio → file → transcription → translation.**"
+                    "Download audio from YouTube, transcribe, translate, then synthesize speech with OmniVoice. "
+                    "**Results appear below in order: audio → file → transcription → translation → TTS.**"
                 )
                 yt = gr.Textbox(
                     label="YouTube URL",
@@ -849,9 +1111,51 @@ def build_ui() -> gr.Blocks:
                     max_tok = gr.Slider(
                         50, 2048, value=512, step=10, label="Max translation tokens (per chunk)"
                     )
+                gr.Markdown("### OmniVoice TTS settings")
+                with gr.Row():
+                    tts_lang = gr.Dropdown(
+                        choices=["Auto"] + list(SUPPORTED_LANGUAGES.keys()),
+                        value="Auto",
+                        label="TTS language",
+                    )
+                    tts_mode = gr.Radio(
+                        choices=["design", "clone"],
+                        value="design",
+                        label="TTS mode",
+                    )
+                    tts_device = gr.Dropdown(
+                        choices=["auto", "cuda", "cpu", "mps"],
+                        value="auto",
+                        label="OmniVoice device",
+                    )
+                with gr.Row():
+                    ref_audio = gr.Audio(
+                        label="Reference audio (clone mode)",
+                        type="filepath",
+                        sources=["upload", "microphone"],
+                    )
+                    ref_text = gr.Textbox(
+                        label="Reference text (optional)",
+                        lines=2,
+                        placeholder="Transcript of the reference audio (improves cloning).",
+                    )
+                tts_instruct = gr.Textbox(
+                    label="Voice design instruction (design mode)",
+                    lines=2,
+                    placeholder="Example: Warm, calm narration voice with clear pronunciation.",
+                )
+                with gr.Row():
+                    tts_steps = gr.Slider(8, 64, value=32, step=1, label="TTS steps")
+                    tts_guidance = gr.Slider(0.5, 6.0, value=2.0, step=0.1, label="TTS guidance")
+                    tts_speed = gr.Slider(0.5, 2.0, value=1.0, step=0.05, label="TTS speed")
+                with gr.Row():
+                    tts_duration = gr.Slider(0, 120, value=0, step=1, label="Target duration (0=auto, sec)")
+                    tts_denoise = gr.Checkbox(label="Denoise", value=True)
+                    tts_preprocess = gr.Checkbox(label="Preprocess prompt", value=True)
+                    tts_postprocess = gr.Checkbox(label="Postprocess output", value=True)
 
                 run_btn = gr.Button(
-                    "Run: Download → Transcribe → Translate", variant="primary", size="lg"
+                    "Run: Download → Transcribe → Translate → TTS", variant="primary", size="lg"
                 )
 
                 gr.Markdown("#### Listen — converted MP3")
@@ -877,12 +1181,19 @@ def build_ui() -> gr.Blocks:
                     label="Translation",
                     lines=12,
                 )
+                gr.Markdown("#### 3 — TTS (OmniVoice)")
+                tts_audio_out = gr.Audio(
+                    label="Synthesized speech",
+                    type="numpy",
+                    interactive=False,
+                )
+                tts_status = gr.Textbox(label="TTS status", interactive=False, lines=2)
                 pipeline_log = gr.Textbox(label="Pipeline log", lines=5, interactive=False)
 
                 lang_asr.change(_sync_src, [lang_asr], [src_tr])
 
                 run_btn.click(
-                    run_full_pipeline,
+                    run_full_pipeline_tts,
                     [
                         yt,
                         hf_token,
@@ -894,6 +1205,19 @@ def build_ui() -> gr.Blocks:
                         tgt_tr,
                         tg_size,
                         max_tok,
+                        tts_lang,
+                        tts_mode,
+                        ref_audio,
+                        ref_text,
+                        tts_instruct,
+                        tts_steps,
+                        tts_guidance,
+                        tts_denoise,
+                        tts_speed,
+                        tts_duration,
+                        tts_preprocess,
+                        tts_postprocess,
+                        tts_device,
                     ],
                     [
                         pipeline_audio,
@@ -901,6 +1225,8 @@ def build_ui() -> gr.Blocks:
                         dl_status,
                         transcript_out,
                         translation_out,
+                        tts_audio_out,
+                        tts_status,
                         pipeline_log,
                     ],
                 )

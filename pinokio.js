@@ -6,7 +6,7 @@ module.exports = {
   version: "6.0.0",
   title: "VidLingo",
   description:
-    "YouTube to MP3, then Cohere Transcribe, then TranslateGemma in one flow. https://github.com/PierrunoYT/VidLingo-Pinokio",
+    "YouTube to MP3, then Cohere Transcribe, then TranslateGemma, then OmniVoice TTS in one flow. https://github.com/PierrunoYT/VidLingo-Pinokio",
   icon: "icon.jpg",
   env: [],
   menu: async (kernel, info) => {
