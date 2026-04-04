@@ -298,9 +298,11 @@ def transcribe_short(
     language: str,
     punctuation: bool,
     hf_token: Optional[str],
+    asr_max_tokens: int = 256,
     progress=gr.Progress(),
 ) -> Tuple[str, str]:
     token = (hf_token or "").strip() or None
+    mt = max(32, int(asr_max_tokens))
     progress(0, desc="Loading ASR...")
     processor, model_asr = get_asr_model(hf_token=token)
     progress(0.3, desc="Loading audio...")
@@ -321,7 +323,7 @@ def transcribe_short(
     progress(0.7, desc="Generating...")
     start_time = time.time()
     with torch.no_grad():
-        outputs = model_asr.generate(**inputs, max_new_tokens=256)
+        outputs = model_asr.generate(**inputs, max_new_tokens=mt)
     elapsed = time.time() - start_time
     text = processor.decode(outputs, skip_special_tokens=True)
     return text, f"Transcribed in {elapsed:.2f}s"
@@ -332,9 +334,11 @@ def transcribe_long(
     language: str,
     punctuation: bool,
     hf_token: Optional[str],
+    asr_max_tokens: int = 256,
     progress=gr.Progress(),
 ) -> Tuple[str, str]:
     token = (hf_token or "").strip() or None
+    mt = max(32, int(asr_max_tokens))
     progress(0, desc="Loading ASR...")
     processor, model_asr = get_asr_model(hf_token=token)
     progress(0.2, desc="Loading audio...")
@@ -357,7 +361,7 @@ def transcribe_long(
     progress(0.6, desc="Generating...")
     start_time = time.time()
     with torch.no_grad():
-        outputs = model_asr.generate(**inputs, max_new_tokens=256)
+        outputs = model_asr.generate(**inputs, max_new_tokens=mt)
     elapsed = time.time() - start_time
     text = processor.decode(
         outputs,
@@ -555,6 +559,7 @@ def transcribe_upload(
     punctuation: bool,
     use_long_form: bool,
     hf_token: str,
+    asr_max_tokens: int,
     progress=gr.Progress(),
 ) -> Tuple[str, str]:
     """Transcribe an uploaded / recorded audio file (no YouTube step)."""
@@ -563,10 +568,20 @@ def transcribe_upload(
     token = (hf_token or "").strip() or None
     if use_long_form:
         return transcribe_long(
-            audio_file, language, punctuation, token, progress=progress
+            audio_file,
+            language,
+            punctuation,
+            token,
+            asr_max_tokens,
+            progress=progress,
         )
     return transcribe_short(
-        audio_file, language, punctuation, token, progress=progress
+        audio_file,
+        language,
+        punctuation,
+        token,
+        asr_max_tokens,
+        progress=progress,
     )
 
 
@@ -576,6 +591,7 @@ def run_full_pipeline(
     transcribe_language: str,
     punctuation: bool,
     use_long_form: bool,
+    asr_max_tokens: int,
     translate_source: str,
     translate_target: str,
     tg_model_size: str,
@@ -620,11 +636,21 @@ def run_full_pipeline(
     progress(0.3, desc="Step 3/4: Transcribing...")
     if use_long_form:
         transcript, tr_stats = transcribe_long(
-            mp3_path, transcribe_language, punctuation, token, progress=progress
+            mp3_path,
+            transcribe_language,
+            punctuation,
+            token,
+            int(asr_max_tokens),
+            progress=progress,
         )
     else:
         transcript, tr_stats = transcribe_short(
-            mp3_path, transcribe_language, punctuation, token, progress=progress
+            mp3_path,
+            transcribe_language,
+            punctuation,
+            token,
+            int(asr_max_tokens),
+            progress=progress,
         )
     log(tr_stats)
     if transcript.startswith("Error") or transcript.startswith("Please"):
@@ -745,6 +771,16 @@ def build_ui() -> gr.Blocks:
                         label="Long-form transcription (recommended for videos)",
                         value=True,
                     )
+                asr_max_tok = gr.Slider(
+                    64,
+                    2048,
+                    value=256,
+                    step=32,
+                    label="Max transcription tokens (Cohere)",
+                )
+                gr.Markdown(
+                    "*Caps Cohere ASR output length — increase if transcription is cut off.*"
+                )
                 with gr.Row():
                     src_tr = gr.Dropdown(
                         choices=list(LANGUAGES.keys()),
@@ -805,6 +841,7 @@ def build_ui() -> gr.Blocks:
                         lang_asr,
                         punct,
                         long_form,
+                        asr_max_tok,
                         src_tr,
                         tgt_tr,
                         tg_size,
@@ -859,6 +896,13 @@ def build_ui() -> gr.Blocks:
                     "Upload or record audio and transcribe with **Cohere** (same models as the pipeline). "
                     "Use **Short** for clips ~30s; **Long** for full tracks with chunking."
                 )
+                asr_upload_tokens = gr.Slider(
+                    64,
+                    2048,
+                    value=256,
+                    step=32,
+                    label="Max transcription tokens (Cohere)",
+                )
                 with gr.Tabs():
                     with gr.Tab("Short-form"):
                         au_short = gr.Audio(
@@ -876,14 +920,14 @@ def build_ui() -> gr.Blocks:
                         out_s = gr.Textbox(label="Transcription", lines=10)
                         stats_s = gr.Textbox(label="Statistics", interactive=False, lines=2)
 
-                        def _ts_short(audio, lang, punc, tok):
+                        def _ts_short(audio, lang, punc, tok, asr_mt):
                             return transcribe_upload(
-                                audio, lang, punc, False, tok
+                                audio, lang, punc, False, tok, asr_mt
                             )
 
                         btn_s.click(
                             _ts_short,
-                            [au_short, lang_s, punct_s, hf_token],
+                            [au_short, lang_s, punct_s, hf_token, asr_upload_tokens],
                             [out_s, stats_s],
                         )
 
@@ -905,14 +949,14 @@ def build_ui() -> gr.Blocks:
                         )
                         stats_l = gr.Textbox(label="Statistics", interactive=False, lines=2)
 
-                        def _ts_long(audio, lang, punc, tok):
+                        def _ts_long(audio, lang, punc, tok, asr_mt):
                             return transcribe_upload(
-                                audio, lang, punc, True, tok
+                                audio, lang, punc, True, tok, asr_mt
                             )
 
                         btn_l.click(
                             _ts_long,
-                            [au_long, lang_l, punct_l, hf_token],
+                            [au_long, lang_l, punct_l, hf_token, asr_upload_tokens],
                             [out_l, stats_l],
                         )
 
