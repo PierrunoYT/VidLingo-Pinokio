@@ -787,13 +787,11 @@ def build_ui() -> gr.Blocks:
                 transcript_out = gr.Textbox(
                     label="Transcription",
                     lines=12,
-                    show_copy_button=True,
                 )
                 gr.Markdown("#### 2 — Translation (TranslateGemma)")
                 translation_out = gr.Textbox(
                     label="Translation",
                     lines=12,
-                    show_copy_button=True,
                 )
                 pipeline_log = gr.Textbox(label="Pipeline log", lines=5, interactive=False)
 
@@ -875,7 +873,7 @@ def build_ui() -> gr.Blocks:
                         )
                         punct_s = gr.Checkbox(label="Punctuation", value=True)
                         btn_s = gr.Button("Transcribe", variant="primary")
-                        out_s = gr.Textbox(label="Transcription", lines=10, show_copy_button=True)
+                        out_s = gr.Textbox(label="Transcription", lines=10)
                         stats_s = gr.Textbox(label="Statistics", interactive=False, lines=2)
 
                         def _ts_short(audio, lang, punc, tok):
@@ -903,7 +901,7 @@ def build_ui() -> gr.Blocks:
                         punct_l = gr.Checkbox(label="Punctuation", value=True)
                         btn_l = gr.Button("Transcribe long audio", variant="primary")
                         out_l = gr.Textbox(
-                            label="Transcription", lines=12, show_copy_button=True
+                            label="Transcription", lines=12
                         )
                         stats_l = gr.Textbox(label="Statistics", interactive=False, lines=2)
 
@@ -962,7 +960,6 @@ def build_ui() -> gr.Blocks:
                 manual_out = gr.Textbox(
                     label="Translation",
                     lines=10,
-                    show_copy_button=True,
                 )
                 manual_status = gr.Textbox(label="Model / status", interactive=False, lines=2)
 
