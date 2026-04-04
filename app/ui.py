@@ -17,6 +17,7 @@ from pipeline import (
     send_transcription_to_translate,
     send_translation_to_omnivoice,
     transcribe_upload,
+    translate_and_synthesize,
     translate_only,
 )
 from translate import set_hf_token
@@ -336,13 +337,15 @@ def build_ui() -> gr.Blocks:
 
             with gr.Tab("OmniVoice TTS"):
                 gr.Markdown(
-                    "Synthesize speech from any text with **OmniVoice** (same options as the full pipeline). "
-                    "Unload **TranslateGemma** automatically before TTS when VRAM is tight."
+                    "Synthesize speech with **OmniVoice** from the text box below — typically the **TranslateGemma** "
+                    "translation (paste it, use **Copy translation…** from the Translate tab, or run "
+                    "**Translate & synthesize** there to speak the translation automatically). "
+                    "TranslateGemma is unloaded before TTS when VRAM is tight."
                 )
                 ov_text = gr.Textbox(
                     label="Text to speak",
                     lines=8,
-                    placeholder="Paste translated text, or any script for TTS.",
+                    placeholder="Usually the translated line — same as full pipeline TTS input.",
                 )
                 with gr.Row():
                     ov_tts_lang = gr.Dropdown(
@@ -417,8 +420,9 @@ def build_ui() -> gr.Blocks:
 
             with gr.Tab("Translate text"):
                 gr.Markdown(
-                    "Translate text with **TranslateGemma** (loads the model on first use). "
-                    "Use **Send translation to OmniVoice** to copy the result into the **OmniVoice TTS** tab."
+                    "Translate with **TranslateGemma**, then optionally speak the **translation** (not the source) "
+                    "with **OmniVoice**. Voice options come from the **OmniVoice TTS** tab — set them there, "
+                    "or use defaults. **Translate & synthesize** runs translation first, then TTS on that output only."
                 )
                 manual_text = gr.Textbox(
                     label="Text to translate",
@@ -444,14 +448,29 @@ def build_ui() -> gr.Blocks:
                     manual_max = gr.Slider(
                         50, 2048, value=512, step=10, label="Max tokens (per chunk)"
                     )
-                tr_only_btn = gr.Button("Translate", variant="primary")
+                with gr.Row():
+                    tr_only_btn = gr.Button("Translate only", variant="secondary")
+                    tr_syn_btn = gr.Button(
+                        "Translate & synthesize speech",
+                        variant="primary",
+                    )
                 manual_out = gr.Textbox(
-                    label="Translation",
+                    label="Translation (TranslateGemma output — this is what OmniVoice speaks)",
                     lines=10,
                 )
                 manual_status = gr.Textbox(label="Model / status", interactive=False, lines=2)
+                tr_syn_audio = gr.Audio(
+                    label="Speech from translation (OmniVoice)",
+                    type="numpy",
+                    interactive=False,
+                )
+                tr_syn_status = gr.Textbox(
+                    label="Translate + TTS status",
+                    interactive=False,
+                    lines=2,
+                )
                 send_to_ov_btn = gr.Button(
-                    "Send translation to OmniVoice tab",
+                    "Copy translation to OmniVoice text box",
                     variant="secondary",
                 )
                 send_to_ov_status = gr.Textbox(
@@ -481,6 +500,39 @@ def build_ui() -> gr.Blocks:
                         manual_max,
                     ],
                     [manual_out, manual_status],
+                )
+                tr_syn_btn.click(
+                    translate_and_synthesize,
+                    [
+                        manual_text,
+                        hf_token,
+                        manual_src,
+                        manual_tgt,
+                        manual_size,
+                        manual_max,
+                        ov_tts_lang,
+                        ov_tts_mode,
+                        ov_ref_audio,
+                        ov_ref_text,
+                        ov_tts_instruct,
+                        ov_tts_steps,
+                        ov_tts_guidance,
+                        ov_tts_denoise,
+                        ov_tts_speed,
+                        ov_tts_duration,
+                        ov_tts_preprocess,
+                        ov_tts_postprocess,
+                        ov_tts_device,
+                    ],
+                    [
+                        manual_out,
+                        manual_status,
+                        tr_syn_audio,
+                        tr_syn_status,
+                        ov_tts_audio,
+                        ov_tts_status,
+                        ov_text,
+                    ],
                 )
                 send_to_ov_btn.click(
                     send_translation_to_omnivoice,

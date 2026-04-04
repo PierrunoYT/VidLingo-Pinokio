@@ -358,6 +358,72 @@ def send_translation_to_omnivoice(translation: str) -> Tuple[object, str]:
     return gr.update(value=t), f"Loaded {len(t)} characters into the OmniVoice tab."
 
 
+def translate_and_synthesize(
+    transcript: str,
+    hf_token: str,
+    translate_source: str,
+    translate_target: str,
+    tg_model_size: str,
+    max_tokens: int,
+    tts_language: str,
+    tts_mode: str,
+    ref_audio,
+    ref_text: str,
+    tts_instruct: str,
+    tts_steps: int,
+    tts_guidance: float,
+    tts_denoise: bool,
+    tts_speed: float,
+    tts_duration: float,
+    tts_preprocess: bool,
+    tts_postprocess: bool,
+    tts_device: str,
+    progress=gr.Progress(),
+) -> Tuple[str, str, Optional[Tuple[int, np.ndarray]], str, Optional[Tuple[int, np.ndarray]], str, object]:
+    """
+    Translate with TranslateGemma, then speak **only the translated text** with OmniVoice
+    (same order as the full pipeline TTS step).
+    """
+    if not transcript or not transcript.strip():
+        return "", "No text to translate.", None, "", None, "", gr.update()
+
+    token = (hf_token or "").strip() or None
+    progress(0.1, desc="Loading TranslateGemma…")
+    unload_asr_model()
+    if token:
+        set_hf_token(hf_token)
+    msg = load_translate_model(tg_model_size, use_pipeline=True)
+    if "Error" in msg or "Authentication" in msg:
+        return "", msg, None, "", None, "", gr.update()
+
+    progress(0.35, desc="Translating…")
+    translated = translate_text_block(
+        transcript, translate_source, translate_target, int(max_tokens)
+    )
+
+    progress(0.65, desc="Unloading TranslateGemma, loading OmniVoice…")
+    unload_translate_model()
+    tts_audio, tts_status = generate_omnivoice_tts(
+        text=translated,
+        tts_language=tts_language,
+        tts_mode=tts_mode,
+        ref_audio=ref_audio,
+        ref_text=ref_text,
+        tts_instruct=tts_instruct,
+        num_step=int(tts_steps),
+        guidance_scale=float(tts_guidance),
+        denoise=bool(tts_denoise),
+        speed=float(tts_speed),
+        duration=float(tts_duration),
+        preprocess_prompt=bool(tts_preprocess),
+        postprocess_output=bool(tts_postprocess),
+        tts_device=tts_device,
+    )
+    progress(1.0, desc="Done")
+    ov_text_update = gr.update(value=translated)
+    return translated, msg, tts_audio, tts_status, tts_audio, tts_status, ov_text_update
+
+
 def omnivoice_synthesize_only(
     text: str,
     tts_language: str,
