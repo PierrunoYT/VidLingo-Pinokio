@@ -1,7 +1,7 @@
 # PyTorch installed via torch.js (Pinokio)
 
-# Transformers (Cohere Transcribe 03-2026 + TranslateGemma)
-transformers>=5.4.0
+# Transformers (OmniVoice currently pins 5.3.0)
+transformers==5.3.0
 accelerate>=1.0.0
 safetensors>=0.6.0
 sentencepiece
