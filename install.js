@@ -9,13 +9,6 @@ module.exports = {
     {
       method: "shell.run",
       params: {
-        path: ".",
-        message: "git lfs install"
-      }
-    },
-    {
-      method: "shell.run",
-      params: {
         venv: "env",
         path: "app",
         message: [
