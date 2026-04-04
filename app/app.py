@@ -843,7 +843,7 @@ def build_ui() -> gr.Blocks:
                 with gr.Row():
                     tg_size = gr.Radio(
                         choices=["4B", "12B", "27B"],
-                        value="12B",
+                        value="4B",
                         label="TranslateGemma size",
                     )
                     max_tok = gr.Slider(
@@ -1042,7 +1042,7 @@ def build_ui() -> gr.Blocks:
                 with gr.Row():
                     manual_size = gr.Radio(
                         choices=["4B", "12B", "27B"],
-                        value="12B",
+                        value="4B",
                         label="Model size",
                     )
                     manual_max = gr.Slider(
