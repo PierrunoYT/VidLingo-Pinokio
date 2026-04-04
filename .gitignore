@@ -1,0 +1,10 @@
+env/
+# Bundled reference Pinokio apps (optional local clones)
+Youtube2DL-Pinokio/
+cohere-transcribe-pinokio/
+TranslateGemma-Pinokio/
+
+app/downloads/
+app/__pycache__/
+*.pyc
+.DS_Store

@@ -1,0 +1,30 @@
+# PyTorch installed via torch.js (Pinokio)
+
+# Transformers (Cohere Transcribe 03-2026 + TranslateGemma)
+transformers>=5.4.0
+accelerate>=1.0.0
+safetensors>=0.6.0
+sentencepiece
+protobuf
+
+# Web UI
+gradio>=5.0.0,<7.0.0
+gradio-client>=2.0.0
+
+# YouTube → MP3
+imageio-ffmpeg
+yt-dlp
+
+# Audio (Cohere ASR)
+librosa>=0.10.0
+soundfile>=0.12.0
+scipy>=1.10.0
+
+# TranslateGemma + utilities
+pillow>=10.0.0
+requests>=2.31.0
+numpy>=1.26.0
+sympy>=1.13.0
+hf-transfer>=0.1.4
+tqdm>=4.65.0
+huggingface_hub>=0.25.0
