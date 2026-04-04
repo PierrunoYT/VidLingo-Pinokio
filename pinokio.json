@@ -1,6 +1,7 @@
 {
   "title": "VidLingo",
   "description": "YouTube to MP3, Cohere transcription, TranslateGemma translation. https://github.com/PierrunoYT/VidLingo-Pinokio",
+  "icon": "icon.jpg",
   "links": [
     {
       "title": "GitHub",

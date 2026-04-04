@@ -7,6 +7,8 @@ module.exports = {
   title: "VidLingo",
   description:
     "YouTube to MP3, then Cohere Transcribe, then TranslateGemma in one flow. https://github.com/PierrunoYT/VidLingo-Pinokio",
+  icon: "icon.jpg",
+  env: [],
   menu: async (kernel, info) => {
     let installed = info.exists("env")
     let running = {

@@ -489,6 +489,87 @@ def translate_text_block(
         return f"Translation error: {e}"
 
 
+def _audio_preview_path(path: Optional[str]) -> Optional[str]:
+    """Only single-file MP3 can be played in the browser; ZIP / other formats return None."""
+    if path and path.lower().endswith(".mp3") and os.path.isfile(path):
+        return path
+    return None
+
+
+def _resolve_downloaded_mp3(
+    only_audio: object, only_file: object
+) -> Tuple[Optional[str], str]:
+    """Get a filesystem path to a single MP3 from YouTube-only tab outputs."""
+    if only_audio is not None:
+        if isinstance(only_audio, str) and os.path.isfile(only_audio):
+            if only_audio.lower().endswith(".mp3"):
+                return only_audio, ""
+        if isinstance(only_audio, dict) and only_audio.get("path"):
+            p = only_audio["path"]
+            if isinstance(p, str) and os.path.isfile(p) and p.lower().endswith(".mp3"):
+                return p, ""
+    if only_file is not None:
+        p = only_file
+        if not isinstance(p, str):
+            p = getattr(only_file, "name", None) or str(only_file)
+        if isinstance(p, str) and os.path.isfile(p) and p.lower().endswith(".mp3"):
+            return p, ""
+    return (
+        None,
+        "No MP3 path found. Download a video that yields a single MP3 (ZIP bundles are not supported here).",
+    )
+
+
+def send_mp3_to_transcribe(
+    only_audio: object, only_file: object
+) -> Tuple[object, object, str]:
+    """Fill both short- and long-form Audio inputs with the downloaded MP3 path."""
+    path, err = _resolve_downloaded_mp3(only_audio, only_file)
+    if not path:
+        return gr.update(), gr.update(), err
+    upd = gr.update(value=path)
+    return upd, upd, f"Loaded into Transcribe: {os.path.basename(path)}"
+
+
+def send_transcription_to_translate(out_short: str, out_long: str) -> Tuple[object, str]:
+    """Copy the latest transcription into the Translate text tab."""
+    long_t = (out_long or "").strip()
+    short_t = (out_short or "").strip()
+    text = long_t or short_t
+    if not text:
+        return gr.update(), "No transcription yet — run Transcribe on the Short-form or Long-form tab first."
+    return gr.update(value=text), f"Sent {len(text)} characters to Translate tab."
+
+
+def download_only_ui(link: str, progress=gr.Progress()) -> Tuple[Optional[str], Optional[str], str]:
+    """YouTube → file + optional MP3 playback path."""
+    path, msg = download_youtube_mp3(link, progress=progress)
+    if path is None:
+        return None, None, msg
+    return _audio_preview_path(path), path, msg
+
+
+def transcribe_upload(
+    audio_file,
+    language: str,
+    punctuation: bool,
+    use_long_form: bool,
+    hf_token: str,
+    progress=gr.Progress(),
+) -> Tuple[str, str]:
+    """Transcribe an uploaded / recorded audio file (no YouTube step)."""
+    if audio_file is None:
+        return "Please upload or record audio.", ""
+    token = (hf_token or "").strip() or None
+    if use_long_form:
+        return transcribe_long(
+            audio_file, language, punctuation, token, progress=progress
+        )
+    return transcribe_short(
+        audio_file, language, punctuation, token, progress=progress
+    )
+
+
 def run_full_pipeline(
     youtube_url: str,
     hf_token: str,
@@ -500,9 +581,9 @@ def run_full_pipeline(
     tg_model_size: str,
     max_tokens: int,
     progress=gr.Progress(),
-) -> Tuple[Optional[str], str, str, str, str]:
+) -> Tuple[Optional[str], Optional[str], str, str, str, str]:
     """
-    Returns: mp3 file, download status, transcription, translation, log
+    Returns: audio_preview_path, file_path, download_status, transcription, translation, log
     """
     log_lines: List[str] = []
 
@@ -515,15 +596,22 @@ def run_full_pipeline(
     progress(0.0, desc="Step 1/4: Downloading audio...")
     mp3_path, dl_msg = download_youtube_mp3(youtube_url, progress=progress)
     if mp3_path is None:
-        return None, dl_msg, "", "", "\n".join(log_lines + [dl_msg])
+        return None, None, dl_msg, "", "", "\n".join(log_lines + [dl_msg])
     log(dl_msg)
+    preview = _audio_preview_path(mp3_path)
     if not mp3_path.lower().endswith(".mp3"):
         return (
+            None,
             mp3_path,
             dl_msg,
             "",
             "",
-            "Expected an MP3 file; got something else.",
+            "\n".join(
+                log_lines
+                + [
+                    "Multiple MP3s were zipped. Download the ZIP below; preview works for a single MP3 only."
+                ]
+            ),
         )
 
     # 2) Transcribe (unload translation model to free VRAM)
@@ -541,7 +629,14 @@ def run_full_pipeline(
     log(tr_stats)
     if transcript.startswith("Error") or transcript.startswith("Please"):
         unload_asr_model()
-        return mp3_path, dl_msg, transcript, "", "\n".join(log_lines)
+        return (
+            preview,
+            mp3_path,
+            dl_msg,
+            transcript,
+            "",
+            "\n".join(log_lines),
+        )
 
     # 3) Unload ASR before TranslateGemma
     progress(0.55, desc="Releasing ASR model...")
@@ -554,7 +649,14 @@ def run_full_pipeline(
     load_msg = load_translate_model(tg_model_size, use_pipeline=True)
     log(load_msg)
     if "Error" in load_msg or "Authentication" in load_msg:
-        return mp3_path, dl_msg, transcript, "", "\n".join(log_lines + [load_msg])
+        return (
+            preview,
+            mp3_path,
+            dl_msg,
+            transcript,
+            "",
+            "\n".join(log_lines + [load_msg]),
+        )
 
     src = translate_source or COHERE_TO_TRANSLATE_SOURCE.get(
         transcribe_language, "English"
@@ -564,7 +666,7 @@ def run_full_pipeline(
         transcript, src, translate_target, int(max_tokens)
     )
     log("Done.")
-    return mp3_path, dl_msg, transcript, translated, "\n".join(log_lines)
+    return preview, mp3_path, dl_msg, transcript, translated, "\n".join(log_lines)
 
 
 def translate_only(
@@ -618,87 +720,285 @@ def build_ui() -> gr.Blocks:
         token_btn.click(set_hf_token, [hf_token], [token_status])
         asr_cache_btn.click(download_asr_model, [hf_token], [token_status])
 
-        gr.Markdown("### Full pipeline")
-        with gr.Row():
-            yt = gr.Textbox(
-                label="YouTube URL",
-                placeholder="https://www.youtube.com/watch?v=...",
-                scale=3,
-            )
-        with gr.Row():
-            lang_asr = gr.Dropdown(
-                choices=list(SUPPORTED_LANGUAGES.keys()),
-                value="English",
-                label="Spoken language (transcription)",
-            )
-            punct = gr.Checkbox(label="Punctuation", value=True)
-            long_form = gr.Checkbox(
-                label="Long-form transcription (recommended for videos)",
-                value=True,
-            )
-        with gr.Row():
-            src_tr = gr.Dropdown(
-                choices=list(LANGUAGES.keys()),
-                value="English",
-                label="Translation: source language",
-            )
-            tgt_tr = gr.Dropdown(
-                choices=list(LANGUAGES.keys()),
-                value="Spanish",
-                label="Translation: target language",
-            )
-        with gr.Row():
-            tg_size = gr.Radio(
-                choices=["4B", "12B", "27B"],
-                value="12B",
-                label="TranslateGemma size",
-            )
-            max_tok = gr.Slider(50, 1024, value=400, step=10, label="Max translation tokens")
-
-        run_btn = gr.Button("Run: Download → Transcribe → Translate", variant="primary")
-        mp3_out = gr.File(label="Downloaded MP3")
-        dl_status = gr.Textbox(label="Download", interactive=False)
-        transcript_out = gr.Textbox(label="Transcription", lines=10)
-        translation_out = gr.Textbox(label="Translation", lines=10)
-        pipeline_log = gr.Textbox(label="Pipeline log", lines=6, interactive=False)
-
         def _sync_src(cohere_label: str):
             return COHERE_TO_TRANSLATE_SOURCE.get(cohere_label, "English")
 
-        lang_asr.change(_sync_src, [lang_asr], [src_tr])
+        with gr.Tabs():
+            # --- Full pipeline ---
+            with gr.Tab("Full pipeline"):
+                gr.Markdown(
+                    "Download audio from YouTube, transcribe, then translate. "
+                    "**Results appear below in order: audio → file → transcription → translation.**"
+                )
+                yt = gr.Textbox(
+                    label="YouTube URL",
+                    placeholder="https://www.youtube.com/watch?v=...",
+                )
+                with gr.Row():
+                    lang_asr = gr.Dropdown(
+                        choices=list(SUPPORTED_LANGUAGES.keys()),
+                        value="English",
+                        label="Spoken language (transcription)",
+                    )
+                    punct = gr.Checkbox(label="Punctuation", value=True)
+                    long_form = gr.Checkbox(
+                        label="Long-form transcription (recommended for videos)",
+                        value=True,
+                    )
+                with gr.Row():
+                    src_tr = gr.Dropdown(
+                        choices=list(LANGUAGES.keys()),
+                        value="English",
+                        label="Translation: source language",
+                    )
+                    tgt_tr = gr.Dropdown(
+                        choices=list(LANGUAGES.keys()),
+                        value="Spanish",
+                        label="Translation: target language",
+                    )
+                with gr.Row():
+                    tg_size = gr.Radio(
+                        choices=["4B", "12B", "27B"],
+                        value="12B",
+                        label="TranslateGemma size",
+                    )
+                    max_tok = gr.Slider(
+                        50, 1024, value=400, step=10, label="Max translation tokens"
+                    )
 
-        run_btn.click(
-            run_full_pipeline,
-            [
-                yt,
-                hf_token,
-                lang_asr,
-                punct,
-                long_form,
-                src_tr,
-                tgt_tr,
-                tg_size,
-                max_tok,
-            ],
-            [mp3_out, dl_status, transcript_out, translation_out, pipeline_log],
+                run_btn = gr.Button(
+                    "Run: Download → Transcribe → Translate", variant="primary", size="lg"
+                )
+
+                gr.Markdown("#### Listen — converted MP3")
+                pipeline_audio = gr.Audio(
+                    label="Play audio",
+                    type="filepath",
+                    interactive=False,
+                )
+                gr.Markdown("#### Download — file on disk (MP3 or ZIP)")
+                mp3_out = gr.File(
+                    label="Download file",
+                    file_count="single",
+                )
+                dl_status = gr.Textbox(label="Download status", interactive=False, lines=2)
+
+                gr.Markdown("#### 1 — Transcription (Cohere)")
+                transcript_out = gr.Textbox(
+                    label="Transcription",
+                    lines=12,
+                    show_copy_button=True,
+                )
+                gr.Markdown("#### 2 — Translation (TranslateGemma)")
+                translation_out = gr.Textbox(
+                    label="Translation",
+                    lines=12,
+                    show_copy_button=True,
+                )
+                pipeline_log = gr.Textbox(label="Pipeline log", lines=5, interactive=False)
+
+                lang_asr.change(_sync_src, [lang_asr], [src_tr])
+
+                run_btn.click(
+                    run_full_pipeline,
+                    [
+                        yt,
+                        hf_token,
+                        lang_asr,
+                        punct,
+                        long_form,
+                        src_tr,
+                        tgt_tr,
+                        tg_size,
+                        max_tok,
+                    ],
+                    [
+                        pipeline_audio,
+                        mp3_out,
+                        dl_status,
+                        transcript_out,
+                        translation_out,
+                        pipeline_log,
+                    ],
+                )
+
+            # --- YouTube MP3 only ---
+            with gr.Tab("YouTube → MP3 only"):
+                gr.Markdown("Download audio as MP3 (or ZIP if multiple tracks). Playback works for a **single MP3**.")
+                yt_only = gr.Textbox(
+                    label="YouTube URL",
+                    placeholder="https://www.youtube.com/watch?v=...",
+                )
+                dl_only_btn = gr.Button("Download", variant="primary")
+                only_audio = gr.Audio(
+                    label="Play MP3",
+                    type="filepath",
+                    interactive=False,
+                )
+                only_file = gr.File(label="Download file", file_count="single")
+                only_status = gr.Textbox(label="Status", interactive=False, lines=2)
+                dl_only_btn.click(
+                    download_only_ui,
+                    [yt_only],
+                    [only_audio, only_file, only_status],
+                )
+                send_to_asr_btn = gr.Button(
+                    "Send MP3 to Transcribe tab",
+                    variant="secondary",
+                )
+                send_mp3_status = gr.Textbox(
+                    label="Send to transcribe",
+                    interactive=False,
+                    lines=1,
+                )
+                gr.Markdown(
+                    "*Opens the same file in **Short-form** and **Long-form** audio inputs — switch to the Transcribe tab to run.*"
+                )
+
+            # --- Transcribe upload ---
+            with gr.Tab("Transcribe audio"):
+                gr.Markdown(
+                    "Upload or record audio and transcribe with **Cohere** (same models as the pipeline). "
+                    "Use **Short** for clips ~30s; **Long** for full tracks with chunking."
+                )
+                with gr.Tabs():
+                    with gr.Tab("Short-form"):
+                        au_short = gr.Audio(
+                            label="Audio",
+                            type="filepath",
+                            sources=["upload", "microphone"],
+                        )
+                        lang_s = gr.Dropdown(
+                            choices=list(SUPPORTED_LANGUAGES.keys()),
+                            value="English",
+                            label="Language",
+                        )
+                        punct_s = gr.Checkbox(label="Punctuation", value=True)
+                        btn_s = gr.Button("Transcribe", variant="primary")
+                        out_s = gr.Textbox(label="Transcription", lines=10, show_copy_button=True)
+                        stats_s = gr.Textbox(label="Statistics", interactive=False, lines=2)
+
+                        def _ts_short(audio, lang, punc, tok):
+                            return transcribe_upload(
+                                audio, lang, punc, False, tok
+                            )
+
+                        btn_s.click(
+                            _ts_short,
+                            [au_short, lang_s, punct_s, hf_token],
+                            [out_s, stats_s],
+                        )
+
+                    with gr.Tab("Long-form"):
+                        au_long = gr.Audio(
+                            label="Audio",
+                            type="filepath",
+                            sources=["upload"],
+                        )
+                        lang_l = gr.Dropdown(
+                            choices=list(SUPPORTED_LANGUAGES.keys()),
+                            value="English",
+                            label="Language",
+                        )
+                        punct_l = gr.Checkbox(label="Punctuation", value=True)
+                        btn_l = gr.Button("Transcribe long audio", variant="primary")
+                        out_l = gr.Textbox(
+                            label="Transcription", lines=12, show_copy_button=True
+                        )
+                        stats_l = gr.Textbox(label="Statistics", interactive=False, lines=2)
+
+                        def _ts_long(audio, lang, punc, tok):
+                            return transcribe_upload(
+                                audio, lang, punc, True, tok
+                            )
+
+                        btn_l.click(
+                            _ts_long,
+                            [au_long, lang_l, punct_l, hf_token],
+                            [out_l, stats_l],
+                        )
+
+                send_to_tr_btn = gr.Button(
+                    "Send transcription to Translate tab",
+                    variant="secondary",
+                )
+                send_tr_status = gr.Textbox(
+                    label="Send to translate",
+                    interactive=False,
+                    lines=1,
+                )
+                gr.Markdown(
+                    "*Prefers **Long-form** transcription if present, otherwise Short-form. Switch to **Translate text** to run.*"
+                )
+
+            # --- Translate text ---
+            with gr.Tab("Translate text"):
+                gr.Markdown("Translate text with **TranslateGemma** (loads the model on first use).")
+                manual_text = gr.Textbox(
+                    label="Text to translate",
+                    lines=8,
+                )
+                with gr.Row():
+                    manual_src = gr.Dropdown(
+                        choices=list(LANGUAGES.keys()),
+                        value="English",
+                        label="From",
+                    )
+                    manual_tgt = gr.Dropdown(
+                        choices=list(LANGUAGES.keys()),
+                        value="French",
+                        label="To",
+                    )
+                with gr.Row():
+                    manual_size = gr.Radio(
+                        choices=["4B", "12B", "27B"],
+                        value="12B",
+                        label="Model size",
+                    )
+                    manual_max = gr.Slider(
+                        50, 1024, value=400, step=10, label="Max tokens"
+                    )
+                tr_only_btn = gr.Button("Translate", variant="primary")
+                manual_out = gr.Textbox(
+                    label="Translation",
+                    lines=10,
+                    show_copy_button=True,
+                )
+                manual_status = gr.Textbox(label="Model / status", interactive=False, lines=2)
+
+                gr.Examples(
+                    examples=[
+                        ["Hello, how are you today?", "English", "Spanish"],
+                        ["Bonjour, comment allez-vous?", "French", "English"],
+                        ["こんにちは、元気ですか？", "Japanese", "English"],
+                    ],
+                    inputs=[manual_text, manual_src, manual_tgt],
+                    label="Examples",
+                )
+
+                tr_only_btn.click(
+                    translate_only,
+                    [
+                        manual_text,
+                        hf_token,
+                        manual_src,
+                        manual_tgt,
+                        manual_size,
+                        manual_max,
+                    ],
+                    [manual_out, manual_status],
+                )
+
+        # Cross-tab: YouTube MP3 → Transcribe; Transcribe → Translate (after all components exist)
+        send_to_asr_btn.click(
+            send_mp3_to_transcribe,
+            [only_audio, only_file],
+            [au_short, au_long, send_mp3_status],
         )
-
-        gr.Markdown("### Translate existing text only")
-        with gr.Row():
-            manual_text = gr.Textbox(label="Text", lines=6, scale=2)
-            with gr.Column():
-                manual_src = gr.Dropdown(choices=list(LANGUAGES.keys()), value="English", label="From")
-                manual_tgt = gr.Dropdown(choices=list(LANGUAGES.keys()), value="French", label="To")
-                manual_size = gr.Radio(choices=["4B", "12B", "27B"], value="12B", label="Model size")
-                manual_max = gr.Slider(50, 1024, value=400, step=10, label="Max tokens")
-                tr_only_btn = gr.Button("Translate text", variant="secondary")
-        manual_out = gr.Textbox(label="Translation", lines=8)
-        manual_status = gr.Textbox(label="Status", interactive=False)
-
-        tr_only_btn.click(
-            translate_only,
-            [manual_text, hf_token, manual_src, manual_tgt, manual_size, manual_max],
-            [manual_out, manual_status],
+        send_to_tr_btn.click(
+            send_transcription_to_translate,
+            [out_s, out_l],
+            [manual_text, send_tr_status],
         )
 
         gr.Markdown(
@@ -707,7 +1007,7 @@ def build_ui() -> gr.Blocks:
             - Accept model licenses on Hugging Face for
               [Cohere Transcribe](https://huggingface.co/CohereLabs/cohere-transcribe-03-2026) and
               [TranslateGemma](https://huggingface.co/google/translategemma-12b-it).
-            - VRAM: the pipeline unloads the ASR model before loading TranslateGemma to reduce peak memory.
+            - VRAM: the full pipeline unloads the ASR model before loading TranslateGemma to reduce peak memory.
             """
         )
 

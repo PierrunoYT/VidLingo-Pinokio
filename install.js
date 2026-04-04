@@ -22,7 +22,10 @@ module.exports = {
         uri: "torch.js",
         params: {
           venv: "env",
-          path: "."
+          path: ".",
+          xformers: false,
+          flashattention: false,
+          triton: false
         }
       }
     },
