@@ -18,9 +18,9 @@ module.exports = {
           HF_HUB_DOWNLOAD_TIMEOUT: "300",
           PYTHONUTF8: "1"
         },
-        path: "app",
+        path: ".",
         message: [
-          "python app.py"
+          "python app/app.py"
         ],
         on: [{
           event: "/(http:\\/\\/[0-9.:]+)/",
