@@ -3,7 +3,7 @@ module.exports = {
     {
       method: "notify",
       params: {
-        html: "Installing Transcribe Studio (YouTube → Cohere ASR → TranslateGemma)..."
+        html: "Installing VidLingo — YouTube → transcribe → translate..."
       }
     },
     {

@@ -1,7 +1,7 @@
 module.exports = {
   version: "5.0",
-  title: "Transcribe Studio",
-  description: "YouTube to MP3, then Cohere Transcribe, then TranslateGemma in one flow.",
+  title: "VidLingo",
+  description: "YouTube to MP3, then Cohere Transcribe, then TranslateGemma in one flow. https://github.com/PierrunoYT/VidLingo-Pinokio",
   menu: async (kernel, info) => {
     let installed = info.exists("env")
     let running = {

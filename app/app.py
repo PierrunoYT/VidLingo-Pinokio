@@ -1,5 +1,5 @@
 """
-Transcribe Studio: YouTube → MP3 (yt-dlp) → Cohere Transcribe → TranslateGemma.
+VidLingo: YouTube → MP3 (yt-dlp) → Cohere Transcribe → TranslateGemma.
 Combines workflows from Youtube2DL-Pinokio, cohere-transcribe-pinokio, TranslateGemma-Pinokio.
 """
 from __future__ import annotations
@@ -567,11 +567,11 @@ _THEME = gr.themes.Soft(primary_hue="cyan", secondary_hue="slate", neutral_hue="
 
 
 def build_ui() -> gr.Blocks:
-    with gr.Blocks(title="Transcribe Studio") as demo:
+    with gr.Blocks(title="VidLingo") as demo:
         gr.Markdown(
             """
-            # Transcribe Studio
-            **YouTube link → MP3 → transcribe (Cohere) → translate (TranslateGemma).**
+            # VidLingo
+            **YouTube → MP3 → transcribe (Cohere) → translate (TranslateGemma).**
             """
         )
 

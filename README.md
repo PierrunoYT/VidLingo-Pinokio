@@ -1,6 +1,8 @@
-# Transcribe Studio (Pinokio)
+# VidLingo
 
-Single Gradio app that chains:
+Repository: [https://github.com/PierrunoYT/VidLingo-Pinokio](https://github.com/PierrunoYT/VidLingo-Pinokio)
+
+**VidLingo** is a Pinokio Gradio app that chains:
 
 1. **YouTube → MP3** — `yt-dlp` + FFmpeg (same idea as [Youtube2DL-Pinokio](./Youtube2DL-Pinokio)).
 2. **Transcription** — [Cohere Transcribe](https://huggingface.co/CohereLabs/cohere-transcribe-03-2026) (same stack as [cohere-transcribe-pinokio](./cohere-transcribe-pinokio)).

@@ -1,4 +1,10 @@
 {
-  "title": "Transcribe Studio",
-  "description": "YouTube to MP3, Cohere transcription, TranslateGemma translation."
+  "title": "VidLingo",
+  "description": "YouTube to MP3, Cohere transcription, TranslateGemma translation. https://github.com/PierrunoYT/VidLingo-Pinokio",
+  "links": [
+    {
+      "title": "GitHub",
+      "value": "https://github.com/PierrunoYT/VidLingo-Pinokio"
+    }
+  ]
 }

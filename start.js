@@ -4,7 +4,7 @@ module.exports = {
     {
       method: "notify",
       params: {
-        html: "Starting Transcribe Studio..."
+        html: "Starting VidLingo..."
       }
     },
     {
@@ -37,7 +37,7 @@ module.exports = {
     {
       method: "notify",
       params: {
-        html: "Transcribe Studio is running."
+        html: "VidLingo is running."
       }
     }
   ]
