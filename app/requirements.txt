@@ -33,7 +33,12 @@ hf-transfer>=0.1.4
 tqdm>=4.65.0
 huggingface_hub>=0.25.0
 
-# OmniVoice: installed via install/update after torch (uv pip install omnivoice --no-deps) to avoid its transformers==5.3.0 pin
+# OmniVoice is installed by install.js/update.js after torch, pinned and with
+# --no-deps: its requirements (torch>=2.4, torchaudio>=2.4, transformers>=5.3.0)
+# would let the resolver replace the platform Torch that torch.js installed.
+# Its runtime dependencies that are not already listed above follow, so the
+# lock still covers them. Keep the pinned version in install.js and update.js
+# in sync.
 tensorboardx
 webdataset
 pydub

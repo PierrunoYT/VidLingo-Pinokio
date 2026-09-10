@@ -46,7 +46,7 @@ module.exports = {
       params: {
         venv: "env",
         path: ".",
-        message: "uv pip install omnivoice --no-deps"
+        message: "uv pip install omnivoice==0.2.1 --no-deps"
       }
     },
     {

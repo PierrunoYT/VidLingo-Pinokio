@@ -66,3 +66,29 @@ jobs:
               sys.exit("missing files referenced by the launcher:\n  " + "\n  ".join(missing))
           print("launcher metadata OK")
           EOF
+
+      - name: Install and Update agree on the OmniVoice pin
+        # OmniVoice is installed outside the lock (--no-deps), so its version is
+        # pinned only in these two scripts; drift means Update silently swaps the
+        # TTS package under a working install.
+        run: |
+          python - <<'EOF'
+          import pathlib
+          import re
+          import sys
+
+          pins = {}
+          for name in ("install.js", "update.js"):
+              found = re.findall(
+                  r"uv pip install omnivoice(\S*)", pathlib.Path(name).read_text()
+              )
+              if not found:
+                  sys.exit(f"{name} does not install omnivoice")
+              pins[name] = set(found)
+          loose = {n: p for n, p in pins.items() if any(not v.startswith("==") for v in p)}
+          if loose:
+              sys.exit(f"omnivoice is not pinned: {loose}")
+          if len({frozenset(p) for p in pins.values()}) != 1:
+              sys.exit(f"omnivoice pins disagree: {pins}")
+          print(f"omnivoice pin OK: {sorted(pins['install.js'])[0]}")
+          EOF
