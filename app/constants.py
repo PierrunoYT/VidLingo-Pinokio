@@ -128,10 +128,21 @@ LANGUAGES = {
 
 YOUTUBE_HOSTS = ("youtube.com", "youtu.be")
 
+def _positive_int_env(name: str, default: int) -> int:
+    """Never let a mistyped environment variable stop the app from importing."""
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return default
+
+
 # How many past download job directories to keep. Each request downloads into
 # its own directory, so jobs cannot delete each other's files; older ones are
 # pruned on the way in.
-DOWNLOAD_RETENTION = max(1, int(os.environ.get("VIDLINGO_DOWNLOAD_RETENTION", "5")))
+DOWNLOAD_RETENTION = _positive_int_env("VIDLINGO_DOWNLOAD_RETENTION", 5)
 
 OMNIVOICE_CHECKPOINT = os.environ.get("OMNIVOICE_MODEL", "k2-fsa/OmniVoice")
 OMNIVOICE_REVISION = os.environ.get(

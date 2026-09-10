@@ -142,8 +142,6 @@ def _translate_single_chunk(
     target_code: str,
     max_tokens: int,
 ) -> str:
-    global pipe, model, processor
-
     messages = [
         {
             "role": "user",
@@ -194,8 +192,6 @@ def translate_text_block(
     real translation, never an error message, so downstream stages (TTS) can
     trust it.
     """
-    global pipe, model, processor
-
     if not text or not text.strip():
         raise TranslationError("No text to translate.")
     if pipe is None and model is None:

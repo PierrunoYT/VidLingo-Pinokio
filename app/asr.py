@@ -20,13 +20,7 @@ _model_cache_asr: dict = {}
 
 
 def unload_asr_model() -> None:
-    global _model_cache_asr
-    for k in list(_model_cache_asr.keys()):
-        entry = _model_cache_asr.pop(k, None)
-        if entry:
-            m = entry.get("model")
-            p = entry.get("processor")
-            del m, p
+    _model_cache_asr.clear()
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
