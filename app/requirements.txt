@@ -1,3 +1,7 @@
+# Input spec only. The launcher installs app/requirements.lock.txt, the
+# resolved set; regenerate it with `python tools/relock.py` after editing this
+# file, otherwise changes here have no effect on an install.
+
 # PyTorch installed via torch.js (Pinokio)
 
 # Transformers >=5.4 for Cohere Transcribe (CohereAsrForConditionalGeneration)

@@ -43,8 +43,15 @@ module.exports = {
       params: {
         venv: "env",
         path: ".",
+        // Install the resolved lock, not the loose spec, so two machines
+        // installing on different days get the same packages. Regenerate with
+        // `python tools/relock.py` after editing app/requirements.txt.
+        // The torch constraint is a backstop: torch.js has already installed
+        // the platform build, which satisfies accelerate's torch>=2.0, so
+        // nothing replaces it. Without the constraint, an environment missing
+        // Torch would silently resolve whatever generic build is newest.
         message: [
-          "uv pip install -r app/requirements.txt"
+          "uv pip install -r app/requirements.lock.txt -c app/torch-constraint.txt"
         ]
       }
     },

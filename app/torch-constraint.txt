@@ -1,0 +1,3 @@
+# Torch version installed by torch.js; constrains lock resolution only.
+# Keep in sync with torch.js when bumping PyTorch.
+torch==2.7.0

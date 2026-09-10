@@ -37,7 +37,8 @@ module.exports = {
       params: {
         venv: "env",
         path: ".",
-        message: "uv pip install -r app/requirements.txt"
+        // Resolved lock, not the loose spec — see install.js.
+        message: "uv pip install -r app/requirements.lock.txt -c app/torch-constraint.txt"
       }
     },
     {
