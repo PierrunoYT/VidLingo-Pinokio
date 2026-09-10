@@ -11,6 +11,12 @@ Repository: [https://github.com/PierrunoYT/VidLingo-Pinokio](https://github.com/
 
 Between ASR and translation, the ASR model is unloaded from GPU/RAM so TranslateGemma can load; accept both model licenses on Hugging Face and use a read token where required.
 
+## Supported platforms
+
+Windows, Linux, and **Apple Silicon** macOS.
+
+**Intel macOS is not supported.** OmniVoice requires PyTorch 2.4 or newer, and PyTorch publishes no Intel-Mac (x86-64 macOS) builds past 2.2.2. Install, Update, and Start stop with an explanation on that platform rather than building an environment that would fail at the TTS step.
+
 ## How to use (Pinokio)
 
 1. Install the app from this folder, then **Start**.

@@ -19,6 +19,21 @@ current_model_size: Optional[str] = None
 hf_token_set = False
 
 
+class TranslationError(RuntimeError):
+    """Raised when translation cannot produce a usable result.
+
+    Operational failures must never travel through the content channel: a
+    downstream stage cannot tell an error string from a translation, and would
+    happily synthesize it as speech. `partial` carries whatever chunks finished
+    before the failure, for display only.
+    """
+
+    def __init__(self, message: str, partial: str = "") -> None:
+        super().__init__(message)
+        self.message = message
+        self.partial = partial
+
+
 def set_hf_token(token: str) -> str:
     global hf_token_set
     if not token or not token.strip():
@@ -158,12 +173,20 @@ def translate_text_block(
     target_lang: str,
     max_tokens: int,
 ) -> str:
+    """Translate `text` and return the translation.
+
+    Raises `TranslationError` on any failure — the return value is always a
+    real translation, never an error message, so downstream stages (TTS) can
+    trust it.
+    """
     global pipe, model, processor
 
     if not text or not text.strip():
-        return "No text to translate."
+        raise TranslationError("No text to translate.")
     if pipe is None and model is None:
-        return "Load TranslateGemma first (pipeline will load it automatically)."
+        raise TranslationError(
+            "Load TranslateGemma first (pipeline will load it automatically)."
+        )
 
     source_code = LANGUAGES.get(source_lang, "en")
     target_code = LANGUAGES.get(target_lang, "es")
@@ -175,7 +198,9 @@ def translate_text_block(
         for chunk in chunks:
             part = _translate_single_chunk(chunk, source_code, target_code, mt)
             translated_parts.append(part)
-        return " ".join(translated_parts)
     except Exception as e:
-        partial = " ".join(translated_parts)
-        return f"{partial}\n\nTranslation error: {e}" if partial else f"Translation error: {e}"
+        raise TranslationError(
+            f"Translation error: {type(e).__name__}: {e}",
+            partial=" ".join(translated_parts),
+        ) from e
+    return " ".join(translated_parts)

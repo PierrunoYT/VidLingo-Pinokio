@@ -15,6 +15,7 @@ from asr import (
 )
 from constants import COHERE_TO_TRANSLATE_SOURCE
 from translate import (
+    TranslationError,
     load_translate_model,
     set_hf_token,
     translate_text_block,
@@ -206,9 +207,19 @@ def run_full_pipeline(
         transcribe_language, "English"
     )
     progress(0.85, desc="Translating...")
-    translated = translate_text_block(
-        transcript, src, translate_target, int(max_tokens)
-    )
+    try:
+        translated = translate_text_block(
+            transcript, src, translate_target, int(max_tokens)
+        )
+    except TranslationError as exc:
+        return (
+            preview,
+            mp3_path,
+            dl_msg,
+            transcript,
+            exc.partial,
+            "\n".join(log_lines + [exc.message]),
+        )
     log("Done.")
     return preview, mp3_path, dl_msg, transcript, translated, "\n".join(log_lines)
 
@@ -293,7 +304,20 @@ def run_full_pipeline_tts(
         return preview, mp3_path, dl_msg, transcript, "", None, "", "\n".join(log_lines + [load_msg])
     src = translate_source or COHERE_TO_TRANSLATE_SOURCE.get(transcribe_language, "English")
     progress(0.78, desc="Translating...")
-    translated = translate_text_block(transcript, src, translate_target, int(max_tokens))
+    try:
+        translated = translate_text_block(transcript, src, translate_target, int(max_tokens))
+    except TranslationError as exc:
+        unload_translate_model()
+        return (
+            preview,
+            mp3_path,
+            dl_msg,
+            transcript,
+            exc.partial,
+            None,
+            exc.message,
+            "\n".join(log_lines + [exc.message, "Stopped before TTS."]),
+        )
 
     progress(0.86, desc="Step 5/5: Preparing OmniVoice...")
     unload_translate_model()
@@ -314,7 +338,7 @@ def run_full_pipeline_tts(
         tts_device=tts_device,
     )
     log(tts_status)
-    log("Done.")
+    log("Done." if tts_audio is not None else "Stopped: TTS failed.")
     return (
         preview,
         mp3_path,
@@ -345,9 +369,12 @@ def translate_only(
     if "Error" in msg or "Authentication" in msg:
         return "", msg
     progress(0.7, desc="Translating...")
-    out = translate_text_block(
-        transcript, translate_source, translate_target, int(max_tokens)
-    )
+    try:
+        out = translate_text_block(
+            transcript, translate_source, translate_target, int(max_tokens)
+        )
+    except TranslationError as exc:
+        return exc.partial, exc.message
     return out, msg
 
 
@@ -397,9 +424,22 @@ def translate_and_synthesize(
         return "", msg, None, "", None, "", gr.update()
 
     progress(0.35, desc="Translating…")
-    translated = translate_text_block(
-        transcript, translate_source, translate_target, int(max_tokens)
-    )
+    try:
+        translated = translate_text_block(
+            transcript, translate_source, translate_target, int(max_tokens)
+        )
+    except TranslationError as exc:
+        # Never synthesize a failure message: stop before TTS.
+        unload_translate_model()
+        return (
+            exc.partial,
+            exc.message,
+            None,
+            "Skipped TTS: translation failed.",
+            None,
+            "Skipped TTS: translation failed.",
+            gr.update(),
+        )
 
     progress(0.65, desc="Unloading TranslateGemma, loading OmniVoice…")
     unload_translate_model()

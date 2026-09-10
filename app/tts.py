@@ -13,9 +13,12 @@ from constants import OMNIVOICE_CHECKPOINT, OMNIVOICE_LOAD_ASR_DEFAULT
 
 try:
     from omnivoice import OmniVoice, OmniVoiceGenerationConfig
-except Exception:
+
+    OMNIVOICE_IMPORT_ERROR: Optional[BaseException] = None
+except ImportError as exc:  # keep the cause; a broken install is not "not installed"
     OmniVoice = None
     OmniVoiceGenerationConfig = None
+    OMNIVOICE_IMPORT_ERROR = exc
 
 ov_model = None
 ov_sampling_rate = 24000
@@ -58,8 +61,15 @@ def unload_omnivoice_model() -> None:
 def get_omnivoice_model(device: str = "auto") -> Tuple[Optional[object], str]:
     global ov_model, ov_sampling_rate, ov_device
     if OmniVoice is None:
+        detail = ""
+        if OMNIVOICE_IMPORT_ERROR is not None:
+            detail = (
+                f" Import failed with "
+                f"{type(OMNIVOICE_IMPORT_ERROR).__name__}: {OMNIVOICE_IMPORT_ERROR}"
+            )
         return None, (
-            "OmniVoice is not installed. Re-run Install (includes `uv pip install omnivoice --no-deps`)."
+            "OmniVoice is not importable. Re-run Install "
+            f"(includes `uv pip install omnivoice --no-deps`).{detail}"
         )
     target_device = _resolve_ov_device(None if device == "auto" else device)
     if ov_model is not None and ov_device == target_device:
@@ -80,6 +90,24 @@ def get_omnivoice_model(device: str = "auto") -> Tuple[Optional[object], str]:
     except Exception as exc:
         unload_omnivoice_model()
         return None, f"Error loading OmniVoice: {exc}"
+
+
+def _to_pcm16(audio) -> Optional[np.ndarray]:
+    """Convert an OmniVoice `generate()` result into a mono int16 waveform.
+
+    `OmniVoice.generate()` returns `list[np.ndarray]`, each a one-dimensional
+    float waveform, but torch tensors and extra leading axes are tolerated.
+    """
+    raw = audio
+    if isinstance(raw, (list, tuple)):
+        if not raw:
+            return None
+        raw = raw[0]
+    if hasattr(raw, "detach"):  # torch tensor
+        raw = raw.detach().to("cpu", torch.float32).numpy()
+    waveform = np.asarray(raw, dtype=np.float32).reshape(-1)
+    np.clip(waveform, -1.0, 1.0, out=waveform)
+    return (waveform * 32767.0).astype(np.int16)
 
 
 def generate_omnivoice_tts(
@@ -138,10 +166,9 @@ def generate_omnivoice_tts(
 
     try:
         audio = model_ov.generate(**kwargs)
-        tensor = audio[0].squeeze(0)
-        if hasattr(tensor, "detach"):
-            tensor = tensor.detach().cpu()
-        waveform = (tensor.numpy() * 32767).astype(np.int16)
+        waveform = _to_pcm16(audio)
+        if waveform is None or waveform.size == 0:
+            return None, "TTS produced no audio."
         return (ov_sampling_rate, waveform), "TTS done."
     except Exception as exc:
         return None, f"TTS error: {type(exc).__name__}: {exc}"

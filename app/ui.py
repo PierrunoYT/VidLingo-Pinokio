@@ -22,6 +22,13 @@ from pipeline import (
 )
 from translate import set_hf_token
 
+# Every handler that loads, unloads, or generates with a model shares this
+# queue. The models are module-level globals and the pipelines unload them to
+# free VRAM, so two listeners running at once can unload a model out from under
+# each other or allocate a second multi-gigabyte copy. Gradio gives each
+# listener its own queue unless they share a `concurrency_id`.
+_MODEL_QUEUE = {"concurrency_id": "models", "concurrency_limit": 1}
+
 
 def build_ui() -> gr.Blocks:
     if not logging.getLogger().handlers:
@@ -45,7 +52,9 @@ def build_ui() -> gr.Blocks:
         token_status = gr.Textbox(label="Token / cache status", interactive=False, lines=2)
 
         token_btn.click(set_hf_token, [hf_token], [token_status])
-        asr_cache_btn.click(download_asr_model, [hf_token], [token_status])
+        asr_cache_btn.click(
+            download_asr_model, [hf_token], [token_status], **_MODEL_QUEUE
+        )
 
         def _sync_src(cohere_label: str):
             return COHERE_TO_TRANSLATE_SOURCE.get(cohere_label, "English")
@@ -219,6 +228,7 @@ def build_ui() -> gr.Blocks:
                         tts_status,
                         pipeline_log,
                     ],
+                    **_MODEL_QUEUE,
                 )
 
             with gr.Tab("YouTube → MP3 only"):
@@ -291,6 +301,7 @@ def build_ui() -> gr.Blocks:
                             _ts_short,
                             [au_short, lang_s, punct_s, hf_token, asr_upload_tokens],
                             [out_s, stats_s],
+                            **_MODEL_QUEUE,
                         )
 
                     with gr.Tab("Long-form"):
@@ -320,6 +331,7 @@ def build_ui() -> gr.Blocks:
                             _ts_long,
                             [au_long, lang_l, punct_l, hf_token, asr_upload_tokens],
                             [out_l, stats_l],
+                            **_MODEL_QUEUE,
                         )
 
                 send_to_tr_btn = gr.Button(
@@ -416,6 +428,7 @@ def build_ui() -> gr.Blocks:
                         ov_tts_device,
                     ],
                     [ov_tts_audio, ov_tts_status],
+                    **_MODEL_QUEUE,
                 )
 
             with gr.Tab("Translate text"):
@@ -500,6 +513,7 @@ def build_ui() -> gr.Blocks:
                         manual_max,
                     ],
                     [manual_out, manual_status],
+                    **_MODEL_QUEUE,
                 )
                 tr_syn_btn.click(
                     translate_and_synthesize,
@@ -533,6 +547,7 @@ def build_ui() -> gr.Blocks:
                         ov_tts_status,
                         ov_text,
                     ],
+                    **_MODEL_QUEUE,
                 )
                 send_to_ov_btn.click(
                     send_translation_to_omnivoice,

@@ -65,15 +65,16 @@ module.exports = {
  },
  "next": null
  },
- // intel mac
+ // intel mac — unsupported. The last x86-64 macOS wheels are 2.2.2, below the
+ // torch>=2.4 OmniVoice requires, so install nothing rather than a Torch that
+ // only looks installed (--no-deps hides the conflict until TTS runs).
  {
  "when": "{{platform === 'darwin' && arch !== 'arm64'}}",
- "method": "shell.run",
+ "method": "notify",
  "params": {
- "venv": "{{args && args.venv ? args.venv : null}}",
- "path": "{{args && args.path ? args.path : '.'}}",
- "message": "uv pip install torch==2.2.2 torchvision==0.17.2 torchaudio==2.2.2 --index-url https://download.pytorch.org/whl/cpu --force-reinstall --no-deps"
- }
+ "html": "VidLingo does not support Intel macOS: OmniVoice TTS requires PyTorch 2.4 or newer and PyTorch publishes no Intel-Mac builds past 2.2.2. Supported platforms: Apple Silicon macOS, Windows, and Linux. No PyTorch was installed."
+ },
+ "next": null
  },
  // cpu
  {

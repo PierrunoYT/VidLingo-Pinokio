@@ -47,6 +47,33 @@ def get_asr_model(device: str = "auto", hf_token: Optional[str] = None):
     return _model_cache_asr[cache_key]["processor"], _model_cache_asr[cache_key]["model"]
 
 
+def _asr_error(exc: BaseException, stage: str) -> Tuple[str, str]:
+    """Turn any transcription failure into the advertised `(text, status)` result.
+
+    Every stage — gated download, init, preprocessing, device transfer,
+    generation, decoding — must fail this way rather than aborting the Gradio
+    event. The `Error` prefix is the contract the pipeline checks.
+    """
+    _log.exception("ASR failed during %s", stage)
+    detail = f"{type(exc).__name__}: {exc}"
+    text = str(exc).lower()
+    if isinstance(exc, torch.cuda.OutOfMemoryError) or "out of memory" in text:
+        unload_asr_model()
+        return (
+            f"Error during {stage}: out of memory. Free VRAM, lower max tokens, "
+            f"or use short-form transcription. ({detail})",
+            "",
+        )
+    if any(k in text for k in ("401", "403", "gated", "authentication", "unauthorized")):
+        unload_asr_model()
+        return (
+            f"Error during {stage}: access denied. Set a Hugging Face token and accept "
+            f"the license at https://huggingface.co/{MODEL_ID_ASR} ({detail})",
+            "",
+        )
+    return f"Error during {stage}: {detail}", ""
+
+
 def download_asr_model(hf_token: str, progress=gr.Progress()) -> str:
     progress(0, desc="Caching ASR model...")
     token = (hf_token or "").strip() or None
@@ -69,28 +96,35 @@ def transcribe_short(
     token = (hf_token or "").strip() or None
     mt = max(32, int(asr_max_tokens))
     progress(0, desc="Loading ASR...")
-    processor, model_asr = get_asr_model(hf_token=token)
+    try:
+        processor, model_asr = get_asr_model(hf_token=token)
+    except Exception as e:
+        unload_asr_model()
+        return _asr_error(e, "model loading")
     progress(0.3, desc="Loading audio...")
     try:
         audio = load_audio(audio_path, sampling_rate=16000)
     except Exception as e:
         return f"Error loading audio: {e}", ""
     lang_code = SUPPORTED_LANGUAGES.get(language, "en")
-    progress(0.5, desc="Transcribing...")
-    inputs = processor(
-        audio,
-        sampling_rate=16000,
-        return_tensors="pt",
-        language=lang_code,
-        punctuation=punctuation,
-    )
-    inputs.to(model_asr.device, dtype=model_asr.dtype)
-    progress(0.7, desc="Generating...")
-    start_time = time.time()
-    with torch.no_grad():
-        outputs = model_asr.generate(**inputs, max_new_tokens=mt)
-    elapsed = time.time() - start_time
-    text = processor.decode(outputs, skip_special_tokens=True)
+    try:
+        progress(0.5, desc="Transcribing...")
+        inputs = processor(
+            audio,
+            sampling_rate=16000,
+            return_tensors="pt",
+            language=lang_code,
+            punctuation=punctuation,
+        )
+        inputs.to(model_asr.device, dtype=model_asr.dtype)
+        progress(0.7, desc="Generating...")
+        start_time = time.time()
+        with torch.no_grad():
+            outputs = model_asr.generate(**inputs, max_new_tokens=mt)
+        elapsed = time.time() - start_time
+        text = processor.decode(outputs, skip_special_tokens=True)
+    except Exception as e:
+        return _asr_error(e, "transcription")
     return text, f"Transcribed in {elapsed:.2f}s"
 
 
@@ -105,7 +139,11 @@ def transcribe_long(
     token = (hf_token or "").strip() or None
     mt = max(32, int(asr_max_tokens))
     progress(0, desc="Loading ASR...")
-    processor, model_asr = get_asr_model(hf_token=token)
+    try:
+        processor, model_asr = get_asr_model(hf_token=token)
+    except Exception as e:
+        unload_asr_model()
+        return _asr_error(e, "model loading")
     progress(0.2, desc="Loading audio...")
     try:
         audio = load_audio(audio_path, sampling_rate=16000)
@@ -113,27 +151,30 @@ def transcribe_long(
         return f"Error loading audio: {e}", ""
     lang_code = SUPPORTED_LANGUAGES.get(language, "en")
     duration_s = len(audio) / 16000
-    progress(0.4, desc="Processing...")
-    inputs = processor(
-        audio=audio,
-        sampling_rate=16000,
-        return_tensors="pt",
-        language=lang_code,
-        punctuation=punctuation,
-    )
-    audio_chunk_index = inputs.get("audio_chunk_index")
-    inputs.to(model_asr.device, dtype=model_asr.dtype)
-    progress(0.6, desc="Generating...")
-    start_time = time.time()
-    with torch.no_grad():
-        outputs = model_asr.generate(**inputs, max_new_tokens=mt)
-    elapsed = time.time() - start_time
-    text = processor.decode(
-        outputs,
-        skip_special_tokens=True,
-        audio_chunk_index=audio_chunk_index,
-        language=lang_code,
-    )[0]
+    try:
+        progress(0.4, desc="Processing...")
+        inputs = processor(
+            audio=audio,
+            sampling_rate=16000,
+            return_tensors="pt",
+            language=lang_code,
+            punctuation=punctuation,
+        )
+        audio_chunk_index = inputs.get("audio_chunk_index")
+        inputs.to(model_asr.device, dtype=model_asr.dtype)
+        progress(0.6, desc="Generating...")
+        start_time = time.time()
+        with torch.no_grad():
+            outputs = model_asr.generate(**inputs, max_new_tokens=mt)
+        elapsed = time.time() - start_time
+        text = processor.decode(
+            outputs,
+            skip_special_tokens=True,
+            audio_chunk_index=audio_chunk_index,
+            language=lang_code,
+        )[0]
+    except Exception as e:
+        return _asr_error(e, "transcription")
     rtfx = duration_s / elapsed if elapsed > 0 else 0
     stats = (
         f"Duration: {duration_s / 60:.1f} min | {elapsed:.1f}s | RTFx: {rtfx:.1f}x"

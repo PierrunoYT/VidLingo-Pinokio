@@ -3,6 +3,15 @@ module.exports = {
     bundle: "ai"
   },
   run: [
+    // Intel macOS is unsupported — see install.js.
+    {
+      when: "{{platform === 'darwin' && arch !== 'arm64'}}",
+      method: "notify",
+      params: {
+        html: "VidLingo does not support Intel macOS. OmniVoice TTS requires PyTorch 2.4 or newer, and PyTorch publishes no Intel-Mac builds past 2.2.2. Supported platforms: Apple Silicon macOS, Windows, and Linux. Update stopped."
+      },
+      next: null
+    },
     {
       method: "shell.run",
       params: {
