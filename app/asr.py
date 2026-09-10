@@ -12,7 +12,7 @@ import torch
 from transformers import AutoProcessor, CohereAsrForConditionalGeneration
 from transformers.audio_utils import load_audio
 
-from constants import MODEL_ID_ASR, SUPPORTED_LANGUAGES
+from constants import ASR_REVISION, MODEL_ID_ASR, SUPPORTED_LANGUAGES
 
 _log = logging.getLogger(__name__)
 
@@ -33,14 +33,26 @@ def unload_asr_model() -> None:
 
 
 def get_asr_model(device: str = "auto", hf_token: Optional[str] = None):
-    cache_key = hf_token or "no_token"
+    # Keyed on what actually distinguishes a loaded model — never on the
+    # credential: a token is a secret, not cache identity, and keying on it
+    # kept it alive as a dict key and loaded a second multi-gigabyte copy
+    # whenever the token changed.
+    # float16 requires a CUDA device; `device="auto"` on a CPU-only machine
+    # resolves to CPU, so ask CUDA rather than the requested string.
+    dtype = torch.float16 if device != "cpu" and torch.cuda.is_available() else torch.float32
+    cache_key = (MODEL_ID_ASR, ASR_REVISION, device, str(dtype))
     if cache_key not in _model_cache_asr:
+        if _model_cache_asr:  # only one ASR model at a time
+            unload_asr_model()
         auth_kwargs = {"token": hf_token} if hf_token else {}
-        proc = AutoProcessor.from_pretrained(MODEL_ID_ASR, **auth_kwargs)
+        proc = AutoProcessor.from_pretrained(
+            MODEL_ID_ASR, revision=ASR_REVISION, **auth_kwargs
+        )
         mdl = CohereAsrForConditionalGeneration.from_pretrained(
             MODEL_ID_ASR,
+            revision=ASR_REVISION,
             device_map=device,
-            torch_dtype=torch.float16 if device != "cpu" else torch.float32,
+            torch_dtype=dtype,
             **auth_kwargs,
         )
         _model_cache_asr[cache_key] = {"processor": proc, "model": mdl}

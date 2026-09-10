@@ -4,20 +4,70 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import shutil
+import time
+import uuid
 import zipfile
 from typing import List, Optional, Tuple
+from urllib.parse import urlparse
 
 import gradio as gr
 import yt_dlp
 
-from constants import FFMPEG_EXE, OUTPUT_DIR, YOUTUBE_HOSTS
+from constants import DOWNLOAD_RETENTION, FFMPEG_EXE, OUTPUT_DIR, YOUTUBE_HOSTS
 
 _log = logging.getLogger(__name__)
+
+# Only directories this module created are ever pruned.
+_JOB_DIR_RE = re.compile(r"^\d{8}-\d{6}-[0-9a-f]{8}$")
 
 
 def _ensure_dir(path: str) -> None:
     os.makedirs(path, exist_ok=True)
+
+
+def _is_youtube_url(link: str) -> bool:
+    """Whether `link` is an http(s) URL on YouTube itself.
+
+    A substring test accepts `https://youtube.com.evil.test/x`,
+    `https://example.com/?youtube.com`, and `http://169.254.169.254/?youtube.com`;
+    the host has to be parsed and compared to be meaningful.
+    """
+    try:
+        parsed = urlparse(link)
+    except ValueError:
+        return False
+    if parsed.scheme not in ("http", "https"):
+        return False
+    host = (parsed.hostname or "").lower().rstrip(".")
+    return any(host == h or host.endswith(f".{h}") for h in YOUTUBE_HOSTS)
+
+
+def _prune_old_jobs(keep: int = DOWNLOAD_RETENTION) -> None:
+    """Best-effort retention: drop all but the `keep` newest job directories."""
+    try:
+        jobs = sorted(
+            name
+            for name in os.listdir(OUTPUT_DIR)
+            if _JOB_DIR_RE.match(name)
+            and os.path.isdir(os.path.join(OUTPUT_DIR, name))
+        )
+    except OSError:
+        return
+    for name in jobs[: max(0, len(jobs) - keep)]:
+        shutil.rmtree(os.path.join(OUTPUT_DIR, name), ignore_errors=True)
+
+
+def _new_job_dir() -> str:
+    """A private directory for one download, so concurrent jobs cannot collide."""
+    _ensure_dir(OUTPUT_DIR)
+    _prune_old_jobs(keep=max(0, DOWNLOAD_RETENTION - 1))
+    job_dir = os.path.join(
+        OUTPUT_DIR, f"{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:8]}"
+    )
+    os.makedirs(job_dir, exist_ok=True)
+    return job_dir
 
 
 def _collect_output_files(output_dir: str) -> List[str]:
@@ -107,19 +157,18 @@ def download_youtube_mp3(link: str, progress=gr.Progress()) -> Tuple[Optional[st
     if not link or not link.strip():
         return None, "Please provide a YouTube link."
     link = link.strip()
-    if os.path.exists(OUTPUT_DIR):
-        shutil.rmtree(OUTPUT_DIR)
-    os.makedirs(OUTPUT_DIR)
+    # Validate before touching disk: a rejected link must not destroy the
+    # output of a previous download.
     progress(0.01, desc="Validating link")
+    if not _is_youtube_url(link):
+        return None, "Unsupported link. Please use a YouTube URL."
     _log.info("[yt-dlp] fetching audio for: %s", link)
     print(f"[yt-dlp] fetching audio for: {link}", flush=True)
     try:
-        if any(host in link for host in YOUTUBE_HOSTS):
-            files = _yt_dlp_download([link], OUTPUT_DIR, progress)
-            if not files:
-                return None, "No files were downloaded. Check the link or ffmpeg."
-            out_path, msg = _zip_if_needed(OUTPUT_DIR, files)
-            return out_path, msg
-        return None, "Unsupported link. Please use a YouTube URL."
+        job_dir = _new_job_dir()
+        files = _yt_dlp_download([link], job_dir, progress)
+        if not files:
+            return None, "No files were downloaded. Check the link or ffmpeg."
+        return _zip_if_needed(job_dir, files)
     except Exception as exc:
         return None, f"Error: {exc}"

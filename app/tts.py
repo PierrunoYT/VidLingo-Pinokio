@@ -3,13 +3,21 @@
 from __future__ import annotations
 
 import gc
+import inspect
+import logging
 import os
 from typing import Optional, Tuple
 
 import numpy as np
 import torch
 
-from constants import OMNIVOICE_CHECKPOINT, OMNIVOICE_LOAD_ASR_DEFAULT
+from constants import (
+    OMNIVOICE_CHECKPOINT,
+    OMNIVOICE_LOAD_ASR_DEFAULT,
+    OMNIVOICE_REVISION,
+)
+
+_log = logging.getLogger(__name__)
 
 try:
     from omnivoice import OmniVoice, OmniVoiceGenerationConfig
@@ -44,6 +52,31 @@ def _env_flag(name: str, default: bool) -> bool:
     if raw is None:
         return default
     return raw.strip().lower() not in ("0", "false", "no", "off")
+
+
+def _revision_kwargs() -> dict:
+    """`revision=` for OmniVoice, when it can actually be honoured.
+
+    OmniVoice ships its own `from_pretrained`, and the checkpoint can be
+    overridden to a local directory via `OMNIVOICE_MODEL`. Pin where that is
+    meaningful; never turn a pin attempt into a TypeError at load time.
+    """
+    if not OMNIVOICE_REVISION or os.path.isdir(OMNIVOICE_CHECKPOINT):
+        return {}
+    try:
+        params = inspect.signature(OmniVoice.from_pretrained).parameters.values()
+    except (TypeError, ValueError):
+        return {}
+    accepted = any(
+        p.name == "revision" or p.kind is inspect.Parameter.VAR_KEYWORD for p in params
+    )
+    if not accepted:
+        _log.warning(
+            "OmniVoice.from_pretrained takes no `revision`; loading %s unpinned.",
+            OMNIVOICE_CHECKPOINT,
+        )
+        return {}
+    return {"revision": OMNIVOICE_REVISION}
 
 
 def unload_omnivoice_model() -> None:
@@ -83,6 +116,7 @@ def get_omnivoice_model(device: str = "auto") -> Tuple[Optional[object], str]:
             device_map=target_device,
             dtype=_resolve_ov_dtype(target_device),
             load_asr=load_asr,
+            **_revision_kwargs(),
         )
         ov_sampling_rate = getattr(ov_model, "sampling_rate", 24000)
         ov_device = target_device

@@ -20,16 +20,11 @@ module.exports = {
         html: "Installing VidLingo — YouTube → transcribe → translate..."
       }
     },
-    {
-      method: "shell.run",
-      params: {
-        venv: "env",
-        path: ".",
-        message: [
-          "uv pip install -r app/requirements.txt"
-        ]
-      }
-    },
+    // Platform Torch first. `accelerate` requires torch>=2.0, so installing
+    // requirements first pulls a generic Torch that torch.js then force-
+    // reinstalls — a redundant multi-gigabyte download and a transiently
+    // wrong environment. Installed first, it already satisfies that
+    // constraint and the requirements install leaves it alone.
     {
       method: "script.start",
       params: {
@@ -41,6 +36,16 @@ module.exports = {
           flashattention: false,
           triton: false
         }
+      }
+    },
+    {
+      method: "shell.run",
+      params: {
+        venv: "env",
+        path: ".",
+        message: [
+          "uv pip install -r app/requirements.txt"
+        ]
       }
     },
     {

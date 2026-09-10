@@ -11,6 +11,25 @@ OUTPUT_DIR = os.path.join(BASE_DIR, "downloads")
 FFMPEG_EXE = imageio_ffmpeg.get_ffmpeg_exe()
 
 MODEL_ID_ASR = "CohereLabs/cohere-transcribe-03-2026"
+
+# Every remote model is pinned to a commit SHA. Tracking a branch means the
+# weights can change under a working install; bump these deliberately after
+# testing rather than letting an install pick up whatever is on `main`.
+# Resolved from the Hugging Face API on 2026-09-10.
+ASR_REVISION = os.environ.get(
+    "VIDLINGO_ASR_REVISION", "b1eacc2686a3d08ceaae5f24a88b1d519620bc09"
+)
+TRANSLATEGEMMA_REVISIONS = {
+    "4B": os.environ.get(
+        "VIDLINGO_TG_4B_REVISION", "10042cb0e6e7fdce748996a71dc3dc432a4e0c89"
+    ),
+    "12B": os.environ.get(
+        "VIDLINGO_TG_12B_REVISION", "d1b225e1caa17f1ddc7e62065d8637d0923f34e2"
+    ),
+    "27B": os.environ.get(
+        "VIDLINGO_TG_27B_REVISION", "7d10f0b72f89a2d0f268cea30727d8b77c0d25c2"
+    ),
+}
 SUPPORTED_LANGUAGES = {
     "English": "en",
     "French": "fr",
@@ -109,5 +128,13 @@ LANGUAGES = {
 
 YOUTUBE_HOSTS = ("youtube.com", "youtu.be")
 
+# How many past download job directories to keep. Each request downloads into
+# its own directory, so jobs cannot delete each other's files; older ones are
+# pruned on the way in.
+DOWNLOAD_RETENTION = max(1, int(os.environ.get("VIDLINGO_DOWNLOAD_RETENTION", "5")))
+
 OMNIVOICE_CHECKPOINT = os.environ.get("OMNIVOICE_MODEL", "k2-fsa/OmniVoice")
+OMNIVOICE_REVISION = os.environ.get(
+    "VIDLINGO_OMNIVOICE_REVISION", "c5fdb5ccb189668d56333f77ba2629f4cd7535f4"
+)
 OMNIVOICE_LOAD_ASR_DEFAULT = False

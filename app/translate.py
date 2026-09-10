@@ -10,7 +10,7 @@ import torch
 from huggingface_hub import login
 from transformers import AutoModelForImageTextToText, AutoProcessor, pipeline
 
-from constants import LANGUAGES
+from constants import LANGUAGES, TRANSLATEGEMMA_REVISIONS
 
 model = None
 processor = None
@@ -71,19 +71,27 @@ def load_translate_model(model_size: str = "12B", use_pipeline: bool = True) -> 
     unload_translate_model()
 
     model_id = f"google/translategemma-{model_size.lower()}-it"
+    revision = TRANSLATEGEMMA_REVISIONS.get(model_size)
+    if revision is None:
+        return (
+            f"Unknown TranslateGemma size {model_size!r}. "
+            f"Pin a revision in constants.py first."
+        )
     try:
         if use_pipeline:
             pipe = pipeline(
                 "image-text-to-text",
                 model=model_id,
+                revision=revision,
                 device="cuda" if torch.cuda.is_available() else "cpu",
                 dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
             )
             current_model_size = model_size
             return f"TranslateGemma {model_size} loaded (CUDA: {torch.cuda.is_available()})."
-        processor = AutoProcessor.from_pretrained(model_id)
+        processor = AutoProcessor.from_pretrained(model_id, revision=revision)
         model = AutoModelForImageTextToText.from_pretrained(
             model_id,
+            revision=revision,
             device_map="auto",
             torch_dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
         )

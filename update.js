@@ -18,14 +18,7 @@ module.exports = {
         message: "git pull"
       }
     },
-    {
-      method: "shell.run",
-      params: {
-        venv: "env",
-        path: ".",
-        message: "uv pip install -r app/requirements.txt"
-      }
-    },
+    // Platform Torch first — see install.js.
     {
       method: "script.start",
       params: {
@@ -37,6 +30,14 @@ module.exports = {
           flashattention: false,
           triton: false
         }
+      }
+    },
+    {
+      method: "shell.run",
+      params: {
+        venv: "env",
+        path: ".",
+        message: "uv pip install -r app/requirements.txt"
       }
     },
     {
