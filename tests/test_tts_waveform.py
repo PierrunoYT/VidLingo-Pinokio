@@ -47,3 +47,11 @@ def test_empty_output_is_not_an_exception():
 
 def test_result_is_int16():
     assert _to_pcm16([SAMPLE]).dtype == np.int16
+
+
+def test_conversion_does_not_mutate_the_model_output():
+    """`reshape` can hand back a view of OmniVoice's own buffer."""
+    loud = np.array([2.0, -2.0, 0.25], dtype=np.float32)
+    original = loud.copy()
+    _to_pcm16([loud])
+    np.testing.assert_array_equal(loud, original)

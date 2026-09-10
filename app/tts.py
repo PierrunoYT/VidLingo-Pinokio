@@ -139,8 +139,10 @@ def _to_pcm16(audio) -> Optional[np.ndarray]:
         raw = raw[0]
     if hasattr(raw, "detach"):  # torch tensor
         raw = raw.detach().to("cpu", torch.float32).numpy()
-    waveform = np.asarray(raw, dtype=np.float32).reshape(-1)
-    np.clip(waveform, -1.0, 1.0, out=waveform)
+    # Not in place: `asarray`/`reshape` hand back a view of the model's own
+    # output buffer when it is already contiguous float32, and clipping through
+    # that view would quietly edit OmniVoice's result.
+    waveform = np.clip(np.asarray(raw, dtype=np.float32).reshape(-1), -1.0, 1.0)
     return (waveform * 32767.0).astype(np.int16)
 
 

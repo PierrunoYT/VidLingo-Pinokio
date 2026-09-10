@@ -71,7 +71,7 @@ def load_translate_model(model_size: str = "12B", use_pipeline: bool = True) -> 
     revision = TRANSLATEGEMMA_REVISIONS.get(model_size)
     if revision is None:
         return (
-            f"Unknown TranslateGemma size {model_size!r}. "
+            f"Error: unknown TranslateGemma size {model_size!r}. "
             f"Pin a revision in constants.py first."
         )
     try:
@@ -102,6 +102,16 @@ def load_translate_model(model_size: str = "12B", use_pipeline: bool = True) -> 
                 f"https://huggingface.co/{model_id}"
             )
         return f"Error loading TranslateGemma: {err}"
+
+
+def translate_model_is_loaded() -> bool:
+    """Whether a TranslateGemma model is actually resident.
+
+    Callers used to decide this by sniffing `load_translate_model()`'s message
+    for "Error"/"Authentication"; any failure phrased differently read as
+    success and the next stage ran against no model at all.
+    """
+    return pipe is not None or model is not None
 
 
 def _split_into_chunks(text: str, max_words: int = 300) -> list[str]:

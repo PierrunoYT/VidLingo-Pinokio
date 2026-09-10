@@ -28,11 +28,13 @@ from translate import set_hf_token
 # listener its own queue unless they share a `concurrency_id`.
 _MODEL_QUEUE = {"concurrency_id": "models", "concurrency_limit": 1}
 
+_THEME = gr.themes.Soft(primary_hue="cyan", secondary_hue="slate", neutral_hue="slate")
+
 
 def build_ui() -> gr.Blocks:
     if not logging.getLogger().handlers:
         logging.basicConfig(level=logging.INFO, format="%(message)s")
-    with gr.Blocks(title="VidLingo") as demo:
+    with gr.Blocks(title="VidLingo", theme=_THEME) as demo:
         gr.Markdown(
             """
             # VidLingo

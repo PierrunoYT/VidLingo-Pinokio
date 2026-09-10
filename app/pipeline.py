@@ -18,6 +18,7 @@ from translate import (
     TranslationError,
     load_translate_model,
     set_hf_token,
+    translate_model_is_loaded,
     translate_text_block,
     unload_translate_model,
 )
@@ -187,7 +188,9 @@ def run_full_pipeline_tts(
         set_hf_token(hf_token)
     load_msg = load_translate_model(tg_model_size, use_pipeline=True)
     log(load_msg)
-    if "Error" in load_msg or "Authentication" in load_msg:
+    # Ask the module whether a model is resident rather than reading the
+    # status text: a failure worded differently used to pass this check.
+    if not translate_model_is_loaded():
         return preview, mp3_path, dl_msg, transcript, "", None, "", "\n".join(log_lines + [load_msg])
     src = translate_source or COHERE_TO_TRANSLATE_SOURCE.get(transcribe_language, "English")
     progress(0.78, desc="Translating...")
@@ -253,7 +256,7 @@ def translate_only(
     if token:
         set_hf_token(hf_token)
     msg = load_translate_model(tg_model_size, use_pipeline=True)
-    if "Error" in msg or "Authentication" in msg:
+    if not translate_model_is_loaded():
         return "", msg
     progress(0.7, desc="Translating...")
     try:
@@ -307,7 +310,7 @@ def translate_and_synthesize(
     if token:
         set_hf_token(hf_token)
     msg = load_translate_model(tg_model_size, use_pipeline=True)
-    if "Error" in msg or "Authentication" in msg:
+    if not translate_model_is_loaded():
         return "", msg, None, "", None, "", gr.update()
 
     progress(0.35, desc="Translating…")
