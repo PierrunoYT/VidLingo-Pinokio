@@ -4,9 +4,9 @@ Repository: [https://github.com/PierrunoYT/VidLingo-Pinokio](https://github.com/
 
 **VidLingo** is a Pinokio Gradio app that chains:
 
-1. **YouTube → MP3** — `yt-dlp` + FFmpeg (same idea as [Youtube2DL-Pinokio](./Youtube2DL-Pinokio)).
-2. **Transcription** — [Cohere Transcribe](https://huggingface.co/CohereLabs/cohere-transcribe-03-2026) (same stack as [cohere-transcribe-pinokio](./cohere-transcribe-pinokio)).
-3. **Translation** — [TranslateGemma](https://huggingface.co/google/translategemma-12b-it) (same idea as [TranslateGemma-Pinokio](./TranslateGemma-Pinokio)).
+1. **YouTube → MP3** — `yt-dlp` + FFmpeg.
+2. **Transcription** — [Cohere Transcribe](https://huggingface.co/CohereLabs/cohere-transcribe-03-2026).
+3. **Translation** — [TranslateGemma](https://huggingface.co/google/translategemma-12b-it).
 4. **TTS** — [OmniVoice](https://huggingface.co/k2-fsa/OmniVoice) for voice design / cloning from translated text.
 
 Between ASR and translation, the ASR model is unloaded from GPU/RAM so TranslateGemma can load; accept both model licenses on Hugging Face and use a read token where required.
@@ -24,7 +24,7 @@ Windows, Linux, and **Apple Silicon** macOS.
 3. Optionally click **Pre-download ASR model** to cache Cohere weights.
 4. Paste a **YouTube URL**, set **spoken language**, **translation source/target**, **TranslateGemma size**, and **OmniVoice TTS settings**, then **Run: Download → Transcribe → Translate → TTS**.
 
-The sibling folders `Youtube2DL-Pinokio`, `cohere-transcribe-pinokio`, and `TranslateGemma-Pinokio` remain standalone references; this repo’s `app/` implements the combined workflow.
+This repo’s `app/` implements the combined workflow. The standalone launchers it draws on (`Youtube2DL-Pinokio`, `cohere-transcribe-pinokio`, `TranslateGemma-Pinokio`, `OmniVoice-Pinokio`) are separate projects — they are not part of this repository, and `.gitignore` excludes them so they can be cloned alongside it for reference.
 
 ## Programmatic API (Gradio)
 
@@ -46,11 +46,15 @@ print(client.view_api())
 #     "English",  # transcribe_language
 #     True,  # punctuation
 #     True,  # use_long_form
+#     256,  # asr_max_tokens
 #     "English",  # translate_source
 #     "Spanish",  # translate_target
-#     "12B",  # tg_model_size
-#     400,  # max_tokens
-#     api_name="/run_full_pipeline",
+#     "4B",  # tg_model_size
+#     512,  # max_tokens
+#     # ...followed by the OmniVoice TTS arguments (language, mode, reference
+#     # audio/text, instruction, steps, guidance, denoise, speed, duration,
+#     # preprocess, postprocess, device) — see view_api() for the exact order.
+#     api_name="/run_full_pipeline_tts",
 # )
 ```
 
@@ -62,6 +66,22 @@ Use the same base URL and call the Gradio HTTP API (see `/info` or `/openapi.jso
 
 Gradio exposes REST routes under the app root; exact paths vary by version. Prefer `GET {base}/openapi.json` or `client.view_api()` to obtain the current `api_name` and payload order.
 
----
+## Development
 
-Subprojects for reference: [Youtube2DL-Pinokio](./Youtube2DL-Pinokio), [cohere-transcribe-pinokio](./cohere-transcribe-pinokio), [TranslateGemma-Pinokio](./TranslateGemma-Pinokio).
+Dependencies are locked. `app/requirements.txt` is the input spec; the launcher
+installs the resolved `app/requirements.lock.txt`. After editing the spec:
+
+```bash
+python tools/relock.py
+```
+
+Remote models are pinned to commit SHAs in `app/constants.py` — bump them
+deliberately after testing, or override per-machine with the `VIDLINGO_*_REVISION`
+environment variables.
+
+Tests cover the failure paths that previously broke silently, and stub every
+heavy dependency, so they need no models and no network:
+
+```bash
+python -m pytest
+```

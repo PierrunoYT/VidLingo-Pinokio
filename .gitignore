@@ -6,6 +6,8 @@ TranslateGemma-Pinokio/
 OmniVoice-Pinokio/
 
 app/downloads/
-app/__pycache__/
+__pycache__/
 *.pyc
+.pytest_cache/
+.ruff_cache/
 .DS_Store

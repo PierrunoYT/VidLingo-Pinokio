@@ -16,7 +16,6 @@ model = None
 processor = None
 pipe = None
 current_model_size: Optional[str] = None
-hf_token_set = False
 
 
 class TranslationError(RuntimeError):
@@ -35,12 +34,10 @@ class TranslationError(RuntimeError):
 
 
 def set_hf_token(token: str) -> str:
-    global hf_token_set
     if not token or not token.strip():
         return "Enter a Hugging Face token (required for gated models)."
     try:
         login(token=token.strip(), add_to_git_credential=False)
-        hf_token_set = True
         return "Hugging Face token accepted."
     except Exception as e:
         return f"Token error: {e}"

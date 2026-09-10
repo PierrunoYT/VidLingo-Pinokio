@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        # The suite stubs Gradio, yt-dlp, Transformers and huggingface_hub, so
+        # no models, GPU or network access are needed. Torch comes from the CPU
+        # index and is pinned to the version torch.js installs.
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch==2.7.0 --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements-dev.txt
+
+      - name: Lint
+        run: ruff check app tests tools
+
+      - name: Test
+        run: python -m pytest
+
+  launchers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Syntax-check launcher scripts
+        run: |
+          for f in *.js; do node --check "$f"; done
+          python -c "import json; json.load(open('pinokio.json'))"
+
+      - name: Launcher metadata references files that exist
+        # A missing icon or entry point only shows up at launch time otherwise.
+        run: |
+          python - <<'EOF'
+          import json, pathlib, re, sys
+
+          missing = []
+          icon = json.load(open("pinokio.json")).get("icon")
+          if icon and not pathlib.Path(icon).is_file():
+              missing.append(f"pinokio.json icon: {icon}")
+          for match in re.finditer(r'icon:\s*"([^"]+)"', pathlib.Path("pinokio.js").read_text()):
+              name = match.group(1)
+              if not name.startswith("fa-") and not pathlib.Path(name).is_file():
+                  missing.append(f"pinokio.js icon: {name}")
+          for name in ("app/requirements.lock.txt", "app/torch-constraint.txt"):
+              if not pathlib.Path(name).is_file():
+                  missing.append(name)
+          if missing:
+              sys.exit("missing files referenced by the launcher:\n  " + "\n  ".join(missing))
+          print("launcher metadata OK")
+          EOF
