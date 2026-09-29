@@ -92,3 +92,28 @@ def test_retention_never_touches_unrecognised_entries(downloads_dir):
     assert users_own.is_dir(), "pruned a directory it did not create"
     assert stray.is_file()
     assert not (downloads_dir / "20200101-000000-aaaaaaaa").exists()
+
+
+def test_watch_link_inside_a_playlist_fetches_one_video(downloads_dir, monkeypatch):
+    """`watch?v=...&list=...` must not pull the whole playlist."""
+    import yt_dlp
+
+    captured: dict = {}
+
+    class _FakeYDL:
+        def __init__(self, opts):
+            captured.update(opts)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def download(self, targets):
+            return 0
+
+    monkeypatch.setattr(yt_dlp, "YoutubeDL", _FakeYDL, raising=False)
+    download_youtube_mp3("https://www.youtube.com/watch?v=abc&list=PLxyz")
+
+    assert captured.get("noplaylist") is True

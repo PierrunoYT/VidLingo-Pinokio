@@ -125,6 +125,10 @@ def _yt_dlp_download(
 
     ydl_opts = {
         "format": "bestaudio/best",
+        # A watch link copied from inside a playlist carries `&list=...`, and
+        # yt-dlp's default is to fetch the whole playlist for it — dozens of
+        # tracks where the user meant one, and a ZIP the pipeline cannot use.
+        "noplaylist": True,
         "outtmpl": os.path.join(output_dir, "%(title)s.%(ext)s"),
         "quiet": True,
         "no_warnings": True,
