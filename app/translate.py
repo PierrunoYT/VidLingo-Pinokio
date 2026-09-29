@@ -60,7 +60,17 @@ def unload_translate_model() -> None:
         torch.cuda.empty_cache()
 
 
-def load_translate_model(model_size: str = "12B", use_pipeline: bool = True) -> str:
+def load_translate_model(
+    model_size: str = "12B",
+    use_pipeline: bool = True,
+    hf_token: Optional[str] = None,
+) -> str:
+    """Load TranslateGemma, authenticating with `hf_token` for this call only.
+
+    The token is passed to the download rather than through `login()`, which
+    writes it to the user's Hugging Face credential store on disk — something
+    only the explicit "Log in" button should do.
+    """
     global model, processor, pipe, current_model_size
     if current_model_size == model_size and (pipe is not None or model is not None):
         return f"TranslateGemma {model_size} already loaded."
@@ -74,6 +84,7 @@ def load_translate_model(model_size: str = "12B", use_pipeline: bool = True) -> 
             f"Error: unknown TranslateGemma size {model_size!r}. "
             f"Pin a revision in constants.py first."
         )
+    auth_kwargs = {"token": hf_token} if hf_token else {}
     try:
         if use_pipeline:
             pipe = pipeline(
@@ -82,21 +93,29 @@ def load_translate_model(model_size: str = "12B", use_pipeline: bool = True) -> 
                 revision=revision,
                 device="cuda" if torch.cuda.is_available() else "cpu",
                 dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
+                **auth_kwargs,
             )
             current_model_size = model_size
             return f"TranslateGemma {model_size} loaded (CUDA: {torch.cuda.is_available()})."
-        processor = AutoProcessor.from_pretrained(model_id, revision=revision)
+        processor = AutoProcessor.from_pretrained(
+            model_id, revision=revision, **auth_kwargs
+        )
         model = AutoModelForImageTextToText.from_pretrained(
             model_id,
             revision=revision,
             device_map="auto",
             torch_dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
+            **auth_kwargs,
         )
         current_model_size = model_size
         return f"TranslateGemma {model_size} loaded (CUDA: {torch.cuda.is_available()})."
     except Exception as e:
         err = str(e)
-        if "401" in err or "authentication" in err.lower():
+        # A gated repository without an accepted license answers 403, not 401.
+        if any(
+            k in err.lower()
+            for k in ("401", "403", "gated", "authentication", "unauthorized")
+        ):
             return (
                 f"Authentication error. Set HF token and accept the license: "
                 f"https://huggingface.co/{model_id}"

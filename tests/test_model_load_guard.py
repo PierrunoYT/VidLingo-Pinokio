@@ -83,3 +83,36 @@ def test_full_pipeline_stops_when_nothing_loaded(failed_load, monkeypatch, tmp_p
     assert len(result) == 8
     assert result[5] is None
     assert UNRECOGNISED_FAILURE in result[7]
+
+
+def test_pipelines_do_not_persist_the_token(monkeypatch, spy_tts):
+    """The token goes to the download, never to `login()` (which writes it to disk)."""
+    import pipeline
+    import translate
+
+    received: dict = {}
+    monkeypatch.setattr(
+        translate, "login", lambda **k: (_ for _ in ()).throw(AssertionError("login ran"))
+    )
+    monkeypatch.setattr(
+        pipeline,
+        "load_translate_model",
+        lambda *a, **k: received.update(k) or "Error: stop here",
+    )
+    monkeypatch.setattr(translate, "pipe", None)
+    monkeypatch.setattr(translate, "model", None)
+
+    pipeline.translate_only("Hello.", " hf_secret ", "English", "French", "4B", 512)
+    assert received.get("hf_token") == "hf_secret"
+
+
+def test_gated_repo_failure_explains_the_license(monkeypatch):
+    import translate
+
+    def gated(*args, **kwargs):
+        raise OSError("403 Client Error. Cannot access gated repo for url ...")
+
+    monkeypatch.setattr(translate, "pipeline", gated)
+    msg = translate.load_translate_model("4B")
+    assert "accept the license" in msg
+    assert not translate.translate_model_is_loaded()

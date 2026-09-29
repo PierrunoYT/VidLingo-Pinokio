@@ -17,7 +17,6 @@ from constants import COHERE_TO_TRANSLATE_SOURCE
 from translate import (
     TranslationError,
     load_translate_model,
-    set_hf_token,
     translate_model_is_loaded,
     translate_text_block,
     unload_translate_model,
@@ -204,9 +203,7 @@ def run_full_pipeline_tts(
     progress(0.55, desc="Releasing ASR model...")
     unload_asr_model()
     progress(0.62, desc="Step 4/5: Loading translation model...")
-    if token:
-        set_hf_token(hf_token)
-    load_msg = load_translate_model(tg_model_size, use_pipeline=True)
+    load_msg = load_translate_model(tg_model_size, use_pipeline=True, hf_token=token)
     log(load_msg)
     # Ask the module whether a model is resident rather than reading the
     # status text: a failure worded differently used to pass this check.
@@ -273,9 +270,7 @@ def translate_only(
     token = (hf_token or "").strip() or None
     progress(0.2, desc="Loading translation model...")
     _release_models_except("translate")
-    if token:
-        set_hf_token(hf_token)
-    msg = load_translate_model(tg_model_size, use_pipeline=True)
+    msg = load_translate_model(tg_model_size, use_pipeline=True, hf_token=token)
     if not translate_model_is_loaded():
         return "", msg
     progress(0.7, desc="Translating...")
@@ -327,9 +322,7 @@ def translate_and_synthesize(
     token = (hf_token or "").strip() or None
     progress(0.1, desc="Loading TranslateGemma…")
     _release_models_except("translate")
-    if token:
-        set_hf_token(hf_token)
-    msg = load_translate_model(tg_model_size, use_pipeline=True)
+    msg = load_translate_model(tg_model_size, use_pipeline=True, hf_token=token)
     if not translate_model_is_loaded():
         return "", msg, None, "", None, "", gr.update()
 
