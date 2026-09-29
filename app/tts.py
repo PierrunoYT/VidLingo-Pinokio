@@ -190,17 +190,19 @@ def generate_omnivoice_tts(
         kwargs["speed"] = float(speed)
     if duration is not None and float(duration) > 0:
         kwargs["duration"] = float(duration)
-    if tts_mode == "clone":
-        if not ref_audio:
-            return None, "Clone mode needs a reference audio."
-        kwargs["voice_clone_prompt"] = model_ov.create_voice_clone_prompt(
-            ref_audio=ref_audio,
-            ref_text=(ref_text or "").strip() or None,
-        )
-    elif tts_mode == "design" and (tts_instruct or "").strip():
+    if tts_mode == "clone" and not ref_audio:
+        return None, "Clone mode needs a reference audio."
+    if tts_mode == "design" and (tts_instruct or "").strip():
         kwargs["instruct"] = tts_instruct.strip()
 
     try:
+        # Inside the guard: an unreadable or unsupported reference file raises
+        # here, and must come back as a status rather than abort the event.
+        if tts_mode == "clone":
+            kwargs["voice_clone_prompt"] = model_ov.create_voice_clone_prompt(
+                ref_audio=ref_audio,
+                ref_text=(ref_text or "").strip() or None,
+            )
         audio = model_ov.generate(**kwargs)
         waveform = _to_pcm16(audio)
         if waveform is None or waveform.size == 0:
