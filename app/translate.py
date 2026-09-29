@@ -114,14 +114,45 @@ def translate_model_is_loaded() -> bool:
     return pipe is not None or model is not None
 
 
+# Scripts written without spaces between words: each character counts as a
+# word, or a whole paragraph of Chinese or Japanese would measure as one.
+_UNSPACED = "぀-ヿ㐀-䶿一-鿿豈-﫿฀-๿"
+_WORD_RE = re.compile(rf"[{_UNSPACED}]|[^\s{_UNSPACED}]+")
+# Sentence ends: Latin punctuation before whitespace, or full-width
+# punctuation, which is not followed by a space.
+_SENTENCE_END_RE = re.compile(r"(?<=[.!?])\s+|(?<=[。！？])\s*")
+
+
+def _split_oversized(sentence: str, max_words: int) -> list[str]:
+    """Cut one sentence longer than `max_words` into word-bounded windows.
+
+    Transcription with punctuation off yields no sentence ends at all, and a
+    single "sentence" of thousands of words overflowed `max_new_tokens`: the
+    model stopped part-way and the rest of the transcript silently vanished.
+    """
+    words = list(_WORD_RE.finditer(sentence))
+    if len(words) <= max_words:
+        return [sentence]
+    pieces = []
+    for i in range(0, len(words), max_words):
+        window = words[i : i + max_words]
+        pieces.append(sentence[window[0].start() : window[-1].end()])
+    return pieces
+
+
 def _split_into_chunks(text: str, max_words: int = 300) -> list[str]:
-    sentences = re.split(r"(?<=[.!?])\s+", text.strip())
+    sentences = [
+        piece
+        for sentence in _SENTENCE_END_RE.split(text.strip())
+        if sentence
+        for piece in _split_oversized(sentence, max_words)
+    ]
     chunks: list[str] = []
     current: list[str] = []
     current_words = 0
 
     for sentence in sentences:
-        words = len(sentence.split())
+        words = len(_WORD_RE.findall(sentence))
         if current_words + words > max_words and current:
             chunks.append(" ".join(current))
             current = [sentence]
