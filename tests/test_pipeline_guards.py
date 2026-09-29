@@ -129,3 +129,36 @@ def test_full_pipeline_failure_matches_success_arity(
     )
     failed = _run_full_pipeline_tts()
     assert len(ok) == len(failed) == 8
+
+
+def test_transcript_starting_with_error_is_not_a_failure(
+    stub_download, working_translation, spy_tts, monkeypatch
+):
+    """Speech may begin with "Error..."; only the empty status means failure."""
+    import pipeline
+
+    monkeypatch.setattr(
+        pipeline,
+        "transcribe_long",
+        lambda *a, **k: ("Errors happen to everyone.", "Duration: 0.1 min"),
+    )
+    result = _run_full_pipeline_tts()
+    assert result[3] == "Errors happen to everyone."
+    assert spy_tts == ["Bonjour."], "a valid transcript was treated as a failure"
+
+
+def test_asr_failure_stops_before_translation(stub_download, spy_tts, monkeypatch):
+    import pipeline
+
+    monkeypatch.setattr(
+        pipeline, "transcribe_long", lambda *a, **k: ("Error during transcription: x", "")
+    )
+    monkeypatch.setattr(
+        pipeline,
+        "load_translate_model",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("translation ran")),
+    )
+    result = _run_full_pipeline_tts()
+    assert spy_tts == []
+    assert result[4] == ""
+    assert "Error during transcription" in result[7]

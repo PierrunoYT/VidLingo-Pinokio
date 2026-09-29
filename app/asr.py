@@ -58,7 +58,9 @@ def _asr_error(exc: BaseException, stage: str) -> Tuple[str, str]:
 
     Every stage — gated download, init, preprocessing, device transfer,
     generation, decoding — must fail this way rather than aborting the Gradio
-    event. The `Error` prefix is the contract the pipeline checks.
+    event. The empty status is the contract the pipeline checks: every success
+    returns non-empty stats and every failure returns `""`. The text is no
+    signal, because a real transcript may begin with any word.
     """
     _log.exception("ASR failed during %s", stage)
     detail = f"{type(exc).__name__}: {exc}"

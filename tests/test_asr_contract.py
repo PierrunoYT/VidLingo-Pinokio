@@ -19,8 +19,8 @@ def test_model_load_failure_returns_a_result(monkeypatch):
     monkeypatch.setattr(asr, "get_asr_model", boom)
     text, status = asr.transcribe_short("audio.mp3", "English", True, None)
 
-    assert text.startswith("Error"), "pipeline detects failures by this prefix"
-    assert status == ""
+    assert text.startswith("Error")
+    assert status == "", "pipeline detects failures by the empty status"
     assert "huggingface.co" in text, "auth failures should say how to fix them"
 
 

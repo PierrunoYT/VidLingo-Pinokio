@@ -176,10 +176,13 @@ def run_full_pipeline_tts(
             int(asr_max_tokens),
             progress=progress,
         )
-    log(tr_stats)
-    if transcript.startswith("Error") or transcript.startswith("Please"):
+    # A failure is signalled by the empty status, never by the text: speech
+    # that happens to begin with "Error..." is a transcript like any other.
+    if not tr_stats:
         unload_asr_model()
+        log(transcript)
         return preview, mp3_path, dl_msg, transcript, "", None, "", "\n".join(log_lines)
+    log(tr_stats)
 
     progress(0.55, desc="Releasing ASR model...")
     unload_asr_model()
