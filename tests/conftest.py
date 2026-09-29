@@ -111,4 +111,5 @@ def spy_tts(monkeypatch):
     monkeypatch.setattr(pipeline, "load_translate_model", lambda *a, **k: "loaded")
     monkeypatch.setattr(pipeline, "unload_translate_model", lambda *a, **k: None)
     monkeypatch.setattr(pipeline, "unload_asr_model", lambda *a, **k: None)
+    monkeypatch.setattr(pipeline, "unload_omnivoice_model", lambda *a, **k: None)
     return spoken

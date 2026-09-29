@@ -22,8 +22,24 @@ from translate import (
     translate_text_block,
     unload_translate_model,
 )
-from tts import generate_omnivoice_tts
+from tts import generate_omnivoice_tts, unload_omnivoice_model
 from youtube import download_youtube_mp3
+
+
+def _release_models_except(keep: str) -> None:
+    """Free every resident model other than the one the next stage needs.
+
+    ASR, TranslateGemma and OmniVoice are each several gigabytes. Each handler
+    used to release only the model its own pipeline had just used, so a model
+    left over from another tab (OmniVoice after any TTS run, TranslateGemma
+    before a transcription) stayed on the GPU while the next one loaded.
+    """
+    if keep != "asr":
+        unload_asr_model()
+    if keep != "translate":
+        unload_translate_model()
+    if keep != "tts":
+        unload_omnivoice_model()
 
 
 def _audio_preview_path(path: Optional[str]) -> Optional[str]:
@@ -93,6 +109,7 @@ def transcribe_upload(
     if audio_file is None:
         return "Please upload or record audio.", ""
     token = (hf_token or "").strip() or None
+    _release_models_except("asr")
     if use_long_form:
         return transcribe_long(
             audio_file,
@@ -156,7 +173,7 @@ def run_full_pipeline_tts(
         return None, mp3_path, dl_msg, "", "", None, msg, "\n".join(log_lines + [msg])
 
     progress(0.2, desc="Step 2/5: Preparing ASR...")
-    unload_translate_model()
+    _release_models_except("asr")
     progress(0.3, desc="Step 3/5: Transcribing...")
     if use_long_form:
         transcript, tr_stats = transcribe_long(
@@ -255,7 +272,7 @@ def translate_only(
 ) -> Tuple[str, str]:
     token = (hf_token or "").strip() or None
     progress(0.2, desc="Loading translation model...")
-    unload_asr_model()
+    _release_models_except("translate")
     if token:
         set_hf_token(hf_token)
     msg = load_translate_model(tg_model_size, use_pipeline=True)
@@ -309,7 +326,7 @@ def translate_and_synthesize(
 
     token = (hf_token or "").strip() or None
     progress(0.1, desc="Loading TranslateGemma…")
-    unload_asr_model()
+    _release_models_except("translate")
     if token:
         set_hf_token(hf_token)
     msg = load_translate_model(tg_model_size, use_pipeline=True)
@@ -374,8 +391,8 @@ def omnivoice_synthesize_only(
     tts_device: str,
     progress=gr.Progress(),
 ) -> Tuple[Optional[Tuple[int, np.ndarray]], str]:
-    progress(0.05, desc="Releasing translation model (if loaded)…")
-    unload_translate_model()
+    progress(0.05, desc="Releasing other models (if loaded)…")
+    _release_models_except("tts")
     progress(0.15, desc="Synthesizing…")
     audio, status = generate_omnivoice_tts(
         text=text,
