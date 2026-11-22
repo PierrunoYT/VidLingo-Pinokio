@@ -149,3 +149,5 @@ OMNIVOICE_REVISION = os.environ.get(
     "VIDLINGO_OMNIVOICE_REVISION", "c5fdb5ccb189668d56333f77ba2629f4cd7535f4"
 )
 OMNIVOICE_LOAD_ASR_DEFAULT = False
+# OmniVoice uses ISO 639-3 where no 639-1 code is registered for the language.
+OMNIVOICE_LANG_OVERRIDES = {"ar": "arb"}

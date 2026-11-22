@@ -11,13 +11,14 @@ safetensors>=0.6.0
 sentencepiece
 protobuf
 
-# Web UI
-gradio>=5.0.0,<7.0.0
+# Web UI (theme is passed to launch(), which needs Gradio 6)
+gradio>=6.0.0,<7.0.0
 gradio-client>=2.0.0
 
-# YouTube → MP3
+# YouTube → MP3. `[default]` pulls in yt-dlp-ejs, which YouTube extraction
+# needs together with a JavaScript runtime (Node/Bun ship with Pinokio).
 imageio-ffmpeg
-yt-dlp
+yt-dlp[default]
 
 # Audio (Cohere ASR)
 librosa>=0.10.0
@@ -29,7 +30,6 @@ pillow>=10.0.0
 requests>=2.31.0
 numpy>=1.26.0
 sympy>=1.13.0
-hf-transfer>=0.1.4
 tqdm>=4.65.0
 huggingface_hub>=0.25.0
 

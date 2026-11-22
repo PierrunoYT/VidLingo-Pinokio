@@ -12,7 +12,9 @@ import numpy as np
 import torch
 
 from constants import (
+    LANGUAGES,
     OMNIVOICE_CHECKPOINT,
+    OMNIVOICE_LANG_OVERRIDES,
     OMNIVOICE_LOAD_ASR_DEFAULT,
     OMNIVOICE_REVISION,
 )
@@ -146,6 +148,22 @@ def _to_pcm16(audio) -> Optional[np.ndarray]:
     return (waveform * 32767.0).astype(np.int16)
 
 
+def omnivoice_language(name: Optional[str]) -> Optional[str]:
+    """Map a UI language name to the code OmniVoice resolves.
+
+    OmniVoice matches only exact codes or its own lowercase names, so labels
+    such as "Spanish (Mexico)" or "Chinese (Simplified)" would silently fall
+    back to language-agnostic mode. Regional variants use the base language.
+    """
+    if not name or name == "Auto":
+        return None
+    code = LANGUAGES.get(name)
+    if code is None:
+        return name
+    base = code.split("-")[0]
+    return OMNIVOICE_LANG_OVERRIDES.get(base, base)
+
+
 def generate_omnivoice_tts(
     text: str,
     tts_language: str,
@@ -164,13 +182,13 @@ def generate_omnivoice_tts(
 ) -> Tuple[Optional[Tuple[int, np.ndarray]], str]:
     if not text or not text.strip():
         return None, "No text to synthesize."
+    # Validate before loading: the model is several gigabytes.
+    if tts_mode == "clone" and not ref_audio:
+        return None, "Clone mode needs a reference audio."
 
     model_ov, load_msg = get_omnivoice_model(device=tts_device)
     if model_ov is None:
         return None, load_msg
-
-    if OmniVoiceGenerationConfig is None:
-        return None, "OmniVoice generation config is unavailable."
 
     gen_config = OmniVoiceGenerationConfig(
         num_step=int(num_step or 32),
@@ -179,10 +197,9 @@ def generate_omnivoice_tts(
         preprocess_prompt=bool(preprocess_prompt),
         postprocess_output=bool(postprocess_output),
     )
-    lang = None if not tts_language or tts_language == "Auto" else tts_language
     kwargs = {
         "text": text.strip(),
-        "language": lang,
+        "language": omnivoice_language(tts_language),
         "generation_config": gen_config,
     }
 
@@ -190,8 +207,6 @@ def generate_omnivoice_tts(
         kwargs["speed"] = float(speed)
     if duration is not None and float(duration) > 0:
         kwargs["duration"] = float(duration)
-    if tts_mode == "clone" and not ref_audio:
-        return None, "Clone mode needs a reference audio."
     if tts_mode == "design" and (tts_instruct or "").strip():
         kwargs["instruct"] = tts_instruct.strip()
 

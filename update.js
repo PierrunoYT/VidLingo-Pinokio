@@ -37,8 +37,9 @@ module.exports = {
       params: {
         venv: "env",
         path: ".",
-        // Resolved lock, not the loose spec — see install.js.
-        message: "uv pip install -r app/requirements.lock.txt -c app/torch-constraint.txt"
+        // Resolved lock, not the loose spec; constraint skipped on AMD
+        // Windows — see install.js.
+        message: "uv pip install -r app/requirements.lock.txt {{gpu === 'amd' && platform === 'win32' ? '' : '-c app/torch-constraint.txt'}}"
       }
     },
     {

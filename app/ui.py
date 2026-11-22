@@ -6,11 +6,11 @@ import logging
 
 import gradio as gr
 
-from asr import download_asr_model
 from constants import COHERE_TO_TRANSLATE_SOURCE, LANGUAGES, SUPPORTED_LANGUAGES
 from pipeline import (
     download_only_ui,
     omnivoice_synthesize_only,
+    predownload_asr,
     run_full_pipeline_tts,
     send_mp3_to_transcribe,
     send_transcription_to_translate,
@@ -28,13 +28,14 @@ from translate import set_hf_token
 # listener its own queue unless they share a `concurrency_id`.
 _MODEL_QUEUE = {"concurrency_id": "models", "concurrency_limit": 1}
 
-_THEME = gr.themes.Soft(primary_hue="cyan", secondary_hue="slate", neutral_hue="slate")
+# Gradio 6 takes the theme in `launch()`, not `gr.Blocks()`; see app.py.
+THEME = gr.themes.Soft(primary_hue="cyan", secondary_hue="slate", neutral_hue="slate")
 
 
 def build_ui() -> gr.Blocks:
     if not logging.getLogger().handlers:
         logging.basicConfig(level=logging.INFO, format="%(message)s")
-    with gr.Blocks(title="VidLingo", theme=_THEME) as demo:
+    with gr.Blocks(title="VidLingo") as demo:
         gr.Markdown(
             """
             # VidLingo
@@ -54,7 +55,7 @@ def build_ui() -> gr.Blocks:
 
         token_btn.click(set_hf_token, [hf_token], [token_status])
         asr_cache_btn.click(
-            download_asr_model, [hf_token], [token_status], **_MODEL_QUEUE
+            predownload_asr, [hf_token], [token_status], **_MODEL_QUEUE
         )
 
         def _sync_src(cohere_label: str):
@@ -109,12 +110,12 @@ def build_ui() -> gr.Blocks:
                         label="TranslateGemma size",
                     )
                     max_tok = gr.Slider(
-                        50, 2048, value=512, step=10, label="Max translation tokens (per chunk)"
+                        64, 2048, value=512, step=16, label="Max translation tokens (per chunk)"
                     )
                 gr.Markdown("### OmniVoice TTS settings")
                 with gr.Row():
                     tts_lang = gr.Dropdown(
-                        choices=["Auto"] + list(SUPPORTED_LANGUAGES.keys()),
+                        choices=["Auto"] + list(LANGUAGES.keys()),
                         value="Auto",
                         label="TTS language",
                     )
@@ -191,6 +192,8 @@ def build_ui() -> gr.Blocks:
                 pipeline_log = gr.Textbox(label="Pipeline log", lines=5, interactive=False)
 
                 lang_asr.change(_sync_src, [lang_asr], [src_tr])
+                # Speak in the language the text was translated into.
+                tgt_tr.change(lambda lang: lang, [tgt_tr], [tts_lang])
 
                 run_btn.click(
                     run_full_pipeline_tts,
@@ -362,7 +365,7 @@ def build_ui() -> gr.Blocks:
                 )
                 with gr.Row():
                     ov_tts_lang = gr.Dropdown(
-                        choices=["Auto"] + list(SUPPORTED_LANGUAGES.keys()),
+                        choices=["Auto"] + list(LANGUAGES.keys()),
                         value="Auto",
                         label="TTS language",
                     )
@@ -460,7 +463,7 @@ def build_ui() -> gr.Blocks:
                         label="Model size",
                     )
                     manual_max = gr.Slider(
-                        50, 2048, value=512, step=10, label="Max tokens (per chunk)"
+                        64, 2048, value=512, step=16, label="Max tokens (per chunk)"
                     )
                 with gr.Row():
                     tr_only_btn = gr.Button("Translate only", variant="secondary")

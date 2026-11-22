@@ -7,9 +7,15 @@ module.exports = {
       }
     },
     {
+      method: "fs.rm",
+      params: {
+        path: "app/downloads"
+      }
+    },
+    {
       method: "notify",
       params: {
-        html: "Reset complete! The <code>env</code> folder was removed. Click Install to reinstall."
+        html: "Reset complete! The <code>env</code> and <code>app/downloads</code> folders were removed. Click Install to reinstall."
       }
     }
   ]

@@ -9,6 +9,7 @@ import gradio as gr
 import numpy as np
 
 from asr import (
+    download_asr_model,
     transcribe_long,
     transcribe_short,
     unload_asr_model,
@@ -94,6 +95,12 @@ def download_only_ui(link: str, progress=gr.Progress()) -> Tuple[Optional[str], 
     if path is None:
         return None, None, msg
     return _audio_preview_path(path), path, msg
+
+
+def predownload_asr(hf_token: str, progress=gr.Progress()) -> str:
+    """Cache the ASR model; it loads onto the device, so free the others first."""
+    _release_models_except("asr")
+    return download_asr_model(hf_token, progress=progress)
 
 
 def transcribe_upload(

@@ -68,6 +68,11 @@ def _compile(out_path: Path, exclude: list[str]) -> str:
     for name in exclude:
         cmd += ["--no-emit-package", name]
     cmd += [str(REQUIREMENTS), "-o", str(out_path)]
+    # `uv pip compile` keeps the pins already in its output file unless the
+    # spec forces a change, so seed it with the current lock: editing one
+    # requirement must not silently upgrade every other package.
+    if LOCKFILE.is_file():
+        out_path.write_text(LOCKFILE.read_text(encoding="utf-8"), encoding="utf-8")
     result = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
     if result.returncode != 0:
         sys.stderr.write(result.stderr)

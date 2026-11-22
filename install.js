@@ -50,8 +50,10 @@ module.exports = {
         // the platform build, which satisfies accelerate's torch>=2.0, so
         // nothing replaces it. Without the constraint, an environment missing
         // Torch would silently resolve whatever generic build is newest.
+        // AMD Windows is exempt: torch-directml pins its own older Torch, and
+        // the 2.7.0 constraint would make uv replace it with a CPU build.
         message: [
-          "uv pip install -r app/requirements.lock.txt -c app/torch-constraint.txt"
+          "uv pip install -r app/requirements.lock.txt {{gpu === 'amd' && platform === 'win32' ? '' : '-c app/torch-constraint.txt'}}"
         ]
       }
     },

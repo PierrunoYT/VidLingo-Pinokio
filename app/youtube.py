@@ -62,7 +62,9 @@ def _prune_old_jobs(keep: int = DOWNLOAD_RETENTION) -> None:
 def _new_job_dir() -> str:
     """A private directory for one download, so concurrent jobs cannot collide."""
     _ensure_dir(OUTPUT_DIR)
-    _prune_old_jobs(keep=max(0, DOWNLOAD_RETENTION - 1))
+    # Never prune to zero: with retention 1, `keep=0` would delete the
+    # directory of a download another tab is still transcribing.
+    _prune_old_jobs(keep=max(1, DOWNLOAD_RETENTION - 1))
     job_dir = os.path.join(
         OUTPUT_DIR, f"{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:8]}"
     )
@@ -133,6 +135,10 @@ def _yt_dlp_download(
         "quiet": True,
         "no_warnings": True,
         "ffmpeg_location": FFMPEG_EXE,
+        # YouTube's player challenges need a real JavaScript runtime plus the
+        # yt-dlp-ejs scripts (installed via `yt-dlp[default]`). yt-dlp enables
+        # only Deno by default; Pinokio ships Node and Bun, so allow those too.
+        "js_runtimes": {"deno": {}, "node": {}, "bun": {}},
         "progress_hooks": [_hook],
         "postprocessors": [
             {

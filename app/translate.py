@@ -173,7 +173,7 @@ def _split_into_chunks(text: str, max_words: int = 300) -> list[str]:
     for sentence in sentences:
         words = len(_WORD_RE.findall(sentence))
         if current_words + words > max_words and current:
-            chunks.append(" ".join(current))
+            chunks.append(_join_sentences(current))
             current = [sentence]
             current_words = words
         else:
@@ -181,9 +181,40 @@ def _split_into_chunks(text: str, max_words: int = 300) -> list[str]:
             current_words += words
 
     if current:
-        chunks.append(" ".join(current))
+        chunks.append(_join_sentences(current))
 
     return chunks
+
+
+def _join_sentences(sentences: list[str]) -> str:
+    """Rejoin split sentences; full-width punctuation takes no space after it."""
+    out = ""
+    for sentence in sentences:
+        if out and not out.endswith(("。", "！", "？")):
+            out += " "
+        out += sentence
+    return out
+
+
+# Target scripts written without spaces between sentences (Korean and Thai
+# do use spaces there).
+_UNSPACED_TARGETS = ("zh", "ja")
+
+
+def _join_translations(parts: list[str], target_code: str) -> str:
+    sep = "" if target_code.split("-")[0] in _UNSPACED_TARGETS else " "
+    return sep.join(parts)
+
+
+class _TruncatedOutput(RuntimeError):
+    pass
+
+
+def _truncation_error(max_tokens: int) -> _TruncatedOutput:
+    return _TruncatedOutput(
+        f"output reached the {max_tokens}-token limit and was cut off. "
+        f"Raise 'Max translation tokens' and retry."
+    )
 
 
 def _translate_single_chunk(
@@ -207,7 +238,17 @@ def _translate_single_chunk(
     ]
     if pipe is not None:
         output = pipe(text=messages, max_new_tokens=max_tokens, do_sample=False)
-        return output[0]["generated_text"][-1]["content"]
+        content = output[0]["generated_text"][-1]["content"]
+        # The pipeline hides the token count; re-tokenize to see whether
+        # generation stopped on the limit rather than on end-of-sequence.
+        tokenizer = getattr(pipe, "tokenizer", None) or getattr(
+            getattr(pipe, "processor", None), "tokenizer", None
+        )
+        if tokenizer is not None:
+            n = len(tokenizer(content, add_special_tokens=False)["input_ids"])
+            if n >= max_tokens - 1:
+                raise _truncation_error(max_tokens)
+        return content
     inputs = (
         processor.apply_chat_template(
             messages,
@@ -227,6 +268,10 @@ def _translate_single_chunk(
             pad_token_id=model.config.eos_token_id,
         )
         generation = generation[0][input_len:]
+    eos = model.config.eos_token_id
+    eos_ids = set(eos) if isinstance(eos, (list, tuple)) else {eos}
+    if len(generation) >= max_tokens and int(generation[-1]) not in eos_ids:
+        raise _truncation_error(max_tokens)
     return processor.decode(generation, skip_special_tokens=True)
 
 
@@ -262,6 +307,6 @@ def translate_text_block(
     except Exception as e:
         raise TranslationError(
             f"Translation error: {type(e).__name__}: {e}",
-            partial=" ".join(translated_parts),
+            partial=_join_translations(translated_parts, target_code),
         ) from e
-    return " ".join(translated_parts)
+    return _join_translations(translated_parts, target_code)
