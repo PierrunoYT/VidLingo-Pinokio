@@ -46,7 +46,7 @@ def get_asr_model(device: str = "auto", hf_token: Optional[str] = None):
             MODEL_ID_ASR,
             revision=ASR_REVISION,
             device_map=device,
-            torch_dtype=dtype,
+            dtype=dtype,
             **auth_kwargs,
         )
         _model_cache_asr[cache_key] = {"processor": proc, "model": mdl}
@@ -130,7 +130,9 @@ def transcribe_short(
         with torch.no_grad():
             outputs = model_asr.generate(**inputs, max_new_tokens=mt)
         elapsed = time.time() - start_time
-        text = processor.decode(outputs, skip_special_tokens=True)
+        # A (1, n) batch decodes to a one-element list in Transformers 5; decode
+        # the single sequence so callers get a string, as long-form does.
+        text = processor.decode(outputs[0], skip_special_tokens=True)
     except Exception as e:
         return _asr_error(e, "transcription")
     return text, f"Transcribed in {elapsed:.2f}s"

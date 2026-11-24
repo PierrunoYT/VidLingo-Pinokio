@@ -104,7 +104,7 @@ def load_translate_model(
             model_id,
             revision=revision,
             device_map="auto",
-            torch_dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
+            dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
             **auth_kwargs,
         )
         current_model_size = model_size

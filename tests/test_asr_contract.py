@@ -96,4 +96,36 @@ def test_cpu_only_machine_does_not_request_float16(monkeypatch):
 
     asr.get_asr_model(device="auto")
 
-    assert captured["torch_dtype"] is torch.float32
+    assert captured["dtype"] is torch.float32
+
+
+def test_short_form_returns_a_string_not_a_batch(monkeypatch):
+    """`generate()` returns a (1, n) batch; Transformers 5 decodes a batch to a list."""
+
+    class _Inputs(dict):
+        def to(self, *args, **kwargs):
+            return self
+
+    class _Processor:
+        def __call__(self, *args, **kwargs):
+            return _Inputs()
+
+        def decode(self, ids, **kwargs):
+            if ids.dim() == 2:
+                return ["hello world" for _ in ids]
+            return "hello world"
+
+    class _Model:
+        device = "cpu"
+        dtype = torch.float32
+
+        def generate(self, **kwargs):
+            return torch.tensor([[1, 2, 3]])
+
+    monkeypatch.setattr(asr, "get_asr_model", lambda **kw: (_Processor(), _Model()))
+    monkeypatch.setattr(asr, "load_audio", lambda *a, **k: [0.0] * 16000)
+
+    text, status = asr.transcribe_short("audio.mp3", "English", True, None)
+
+    assert text == "hello world"
+    assert status
